@@ -45,9 +45,10 @@ Deeper Bonds (Aaron Jolliffe playtest) for Project FU v13. Extends FU bonds; doe
    Loyalty/Affection emotion-matching in bond-rule-predicates is broken FU-side. Not ours — flag if an
    adopted class predicates on Loyalty/Affection.
 5. **6→8 cap (ruling 2)** needs detecting *Power of Friendship* + *Empathetic* (class skills) — P3.
-6. **check-push data shape** — the exact field carrying the invoked bond's name in `additionalData.push`
-   is read defensively and must be **verified at install** (same internal-coupling posture as
-   rippers-conditions; confirm on Austin's 4.16.2).
+6. **check-push data shape — RESOLVED (v0.1.3).** The invoked bond's name is `additionalData.push.with`
+   (verified projectfu 4.16.2 checks/check-push.mjs getPushParams: `{with, feelings, strength, ignoreFp}`),
+   NOT `.name`/`.bond.name`. `pushBondName()` reads `.with` (legacy shapes as fallbacks); the renderCheck
+   clock-fill hook now fills the invoked bond's clock. One-fill-per-Check enforcement kept.
 
 ## Table-adjudicated (NOT automated — UI hooks only)
 
