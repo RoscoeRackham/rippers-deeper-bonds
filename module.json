@@ -2,7 +2,7 @@
   "id": "rippers-deeper-bonds",
   "title": "Rippers \u2014 Deeper Bonds",
   "description": "The campaign's Deeper Bonds system (Aaron Jolliffe playtest) for Project FU: bond tiers (fleeting/solid/eternal), 4-section Bond Clocks on solid bonds, a strength ladder, and invoke = +strength retroactive to the roll just made (via FU's check-push). Extends FU bonds without forking. P1: data model + clocks + tiered caps + invoke wiring.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "authors": [
     {
       "name": "Rippers Unmasked"
@@ -43,7 +43,7 @@
   "download": "https://github.com/RoscoeRackham/rippers-deeper-bonds/releases/latest/download/rippers-deeper-bonds.zip",
   "flags": {
     "rippers-deeper-bonds": {
-      "note": "v0.1.1: P1 + sheet tier-CRUD buttons (Solidify cap-checked, Promote Eternal, per-row tier tag + clock, section-level New Fleeting Bond) \u2014 UI over existing API, no data-model change, GM-only. Extends FU bonds via flags; clock-strength -> bond.bonus. Invoke piggybacks FU check-push. projectfu pinned 4.16.0/4.16.2. See COVERAGE.md."
+      "note": "v0.1.2: fixed sheet injection \u2014 wired to renderFUStandardActorSheet (the hook FU's ApplicationV2 sheet actually fires; renderActorSheet did NOT fire, so buttons+clocks were missing) with the real 4.16.2 bonds-fieldset selector (legend.bond-add; rows = child div.flexrow indexed by delete button data-bond-index). P1 + tier-CRUD buttons + clocks now render. Extends FU bonds via flags; clock-strength -> bond.bonus. projectfu pinned 4.16.0/4.16.2."
     }
   }
 }

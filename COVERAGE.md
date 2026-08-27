@@ -1,6 +1,6 @@
 # rippers-deeper-bonds — coverage, owed items & Austin's verify checklist
 
-**Status: v0.1.1 — Phase 1 + sheet tier-CRUD buttons. 18/18 headless tests green. Published for Austin's verify.**
+**Status: v0.1.2 — Phase 1 + sheet tier-CRUD buttons, fixed to render on FU's live sheet. 18/18 tests green. Published.**
 Deeper Bonds (Aaron Jolliffe playtest) for Project FU v13. Extends FU bonds; does NOT fork projectfu.
 
 ## What P1 ships
@@ -26,7 +26,11 @@ Deeper Bonds (Aaron Jolliffe playtest) for Project FU v13. Extends FU bonds; doe
 - **Sheet display**: a `renderActorSheet` hook adds a tier gradient + a 4-section clock (click to fill, GM)
   onto each bond row, plus (v0.1.1) GM tier-CRUD controls: a per-row tier tag, **Solidify** (cap-checked,
   disabled with a tooltip at the six-cap), **→ Eternal**, and a section-level **+ New fleeting bond**. UI
-  over the existing API — no new mechanics; name/emotions stay on FU's native bond editing.
+  over the existing API — no new mechanics; name/emotions stay on FU's native bond editing. Injection is
+  wired to `renderFUStandardActorSheet` (the hook FU's ApplicationV2 sheet actually fires; `renderActorSheet`
+  did not, so v0.1.0/0.1.1 rendered nothing on the live sheet — fixed v0.1.2) against the real 4.16.2
+  bonds fieldset (`legend.bond-add`; rows = child `div.flexrow`, indexed by the delete button's
+  `data-bond-index`).
 
 ## ⚠ Owed / risks (carried per god)
 

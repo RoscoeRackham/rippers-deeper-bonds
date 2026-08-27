@@ -297,17 +297,45 @@ function mkButton(label, title, { disabled = false, onClick } = {}) {
  * section-level "new fleeting bond" control. Reuses the existing API — no new mechanics. Defensive
  * against FU's bond-row markup.
  */
-function onRenderActorSheet(app, html) {
+/**
+ * Locate FU's bonds fieldset + its bond rows in the LIVE 4.16.2 sheet (templates/actor/partials/
+ * actor-bonds.hbs): a <fieldset> with a <legend class="bond-add">, whose bond rows are child
+ * `div.flexrow` elements each carrying a delete `button[data-bond-index]` — the stable row index.
+ */
+function findBondSection(root) {
+	let fieldset = null;
+	for (const fs of root.querySelectorAll('fieldset')) {
+		if (fs.querySelector('legend.bond-add')) {
+			fieldset = fs;
+			break;
+		}
+	}
+	if (!fieldset) return { fieldset: null, rows: [] };
+	const rows = Array.from(fieldset.querySelectorAll(':scope > div.flexrow')).map((el) => {
+		const idxAttr = el.querySelector('button[data-bond-index]')?.getAttribute('data-bond-index');
+		return { el, index: idxAttr == null ? null : Number(idxAttr) };
+	});
+	return { fieldset, rows };
+}
+
+/**
+ * Inject tier tag + clock + GM tier-CRUD controls onto FU's bond rows, and a section-level new-bond
+ * control. Wired to `renderFUStandardActorSheet` (the hook FU's ApplicationV2 sheet actually fires —
+ * proven by rippers-guise), resolving the root from `app.element`.
+ */
+function injectBondControls(app) {
 	try {
 		const actor = app?.actor ?? app?.document;
 		if (!actor || !Array.isArray(actor.system?.bonds)) return;
 		const isGM = !!globalThis.game?.user?.isGM;
-		const root = html?.[0] ?? html;
-		const rows = root?.querySelectorAll?.('[data-bond-index], .bond, .bonds .resource-content, [data-key="system.bonds"] li');
-		if (!rows?.length) return;
+		const el = app?.element;
+		const root = el?.jquery ? el[0] : el; // ApplicationV2 element is a DOM node; tolerate jQuery
+		if (!root?.querySelectorAll) return;
+		const { fieldset, rows } = findBondSection(root);
+		if (!fieldset || !rows.length) return;
 		const records = getRecords(actor);
-		rows.forEach((row, i) => {
-			const rec = records[i];
+		rows.forEach(({ el: row, index }) => {
+			const rec = index == null ? null : records[index];
 			if (!rec || row.querySelector?.('.rdb-controls')) return; // idempotent per row
 			row.classList?.add?.(TIER_CLASS[rec.tier] ?? '');
 
@@ -352,16 +380,13 @@ function onRenderActorSheet(app, html) {
 			row.appendChild?.(controls);
 		});
 
-		// section-level "new fleeting bond" control (GM), added once near the bond rows' common parent
-		if (isGM) {
-			const container = rows[0]?.parentElement;
-			if (container && !container.querySelector?.('.rdb-new-bond')) {
-				const add = mkButton('+ New fleeting bond', 'Create a new fleeting bond (edit name + emotions in the normal bond fields)', {
-					onClick: () => createFleetingBond(actor, { name: 'New Bond' }),
-				});
-				add.classList.add('rdb-new-bond');
-				container.appendChild(add);
-			}
+		// section-level "new fleeting bond" control (GM), appended once inside the bonds fieldset
+		if (isGM && !fieldset.querySelector?.('.rdb-new-bond')) {
+			const add = mkButton('+ New fleeting bond', 'Create a new fleeting bond (edit name + emotions in the normal bond fields)', {
+				onClick: () => createFleetingBond(actor, { name: 'New Bond' }),
+			});
+			add.classList.add('rdb-new-bond');
+			fieldset.appendChild(add);
 		}
 	} catch (err) {
 		console.warn(`${MODULE_ID} | sheet injection failed`, err);
@@ -391,8 +416,10 @@ if (globalThis.Hooks?.once) {
 		if (isActiveGM()) relaxFuBondCap();
 	});
 
-	globalThis.Hooks.on('renderActorSheet', onRenderActorSheet);
-	globalThis.Hooks.on('renderActorSheetV2', onRenderActorSheet);
+	// FU's ApplicationV2 PC sheet fires its OWN render hook (NOT renderActorSheet) — proven by
+	// rippers-guise (Hooks.on('renderFUStandardActorSheet', ...)). Mirror it; keep the NPC variant too.
+	globalThis.Hooks.on('renderFUStandardActorSheet', (app) => injectBondControls(app));
+	globalThis.Hooks.on('renderFUActorSheet', (app) => injectBondControls(app));
 
 	// Invoke = FU check-push. Hook FU's renderCheck to fill the invoked bond's clock + enforce one/Check.
 	// The push data's exact bond-name field is verified at install (⚠ COVERAGE.md), so read defensively.
