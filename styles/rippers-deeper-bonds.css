@@ -1,0 +1,5 @@
+/* Deeper Bonds — tier gradient + clock pips injected onto FU bond rows. */
+.rdb-tier-fleeting { opacity: 0.85; }
+.rdb-tier-solid { box-shadow: inset 3px 0 0 0 var(--rdb-solid, #c8102a); }
+.rdb-tier-eternal { box-shadow: inset 3px 0 0 0 var(--rdb-eternal, #7d3cff); }
+.rdb-clock { margin-left: 0.4em; letter-spacing: 1px; font-size: 0.85em; opacity: 0.9; }

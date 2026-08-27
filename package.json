@@ -1,0 +1,8 @@
+{
+  "name": "rippers-deeper-bonds",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deeper Bonds (tiers/clocks/strength-ladder) for Project FU (Foundry VTT).",
+  "scripts": { "test": "node --test test/*.test.mjs" }
+}
