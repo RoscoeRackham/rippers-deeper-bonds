@@ -122,3 +122,26 @@ test('canInvokeOnCheck: only the first invoke on a Check', () => {
 	assert.equal(canInvokeOnCheck([]), true);
 	assert.equal(canInvokeOnCheck(['Ada']), false);
 });
+
+/* -------- P1.1: solidify button state (pure UI logic) -------- */
+
+import { solidifyButtonState } from '../scripts/rippers-deeper-bonds.mjs';
+
+test('solidifyButtonState: shown+enabled for a fleeting bond under cap', () => {
+	const records = [makeRecord('a', TIER.SOLID), makeRecord('f', TIER.FLEETING)];
+	assert.deepEqual(solidifyButtonState(records[1], records, 6), { show: true, disabled: false, reason: '' });
+});
+
+test('solidifyButtonState: shown+disabled for a fleeting bond at cap', () => {
+	const solids = Array.from({ length: 6 }, (_, i) => makeRecord(`s${i}`, TIER.SOLID));
+	const fleeting = makeRecord('f', TIER.FLEETING);
+	const st = solidifyButtonState(fleeting, [...solids, fleeting], 6);
+	assert.equal(st.show, true);
+	assert.equal(st.disabled, true);
+	assert.match(st.reason, /cap reached/i);
+});
+
+test('solidifyButtonState: hidden for a solid or eternal bond', () => {
+	assert.equal(solidifyButtonState(makeRecord('s', TIER.SOLID), []).show, false);
+	assert.equal(solidifyButtonState(makeRecord('e', TIER.ETERNAL), []).show, false);
+});

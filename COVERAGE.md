@@ -1,6 +1,6 @@
 # rippers-deeper-bonds — coverage, owed items & Austin's verify checklist
 
-**Status: Phase 1 BUILT + headless-tested (15/15 green). NOT verified in Foundry. NOT published.**
+**Status: v0.1.1 — Phase 1 + sheet tier-CRUD buttons. 18/18 headless tests green. Published for Austin's verify.**
 Deeper Bonds (Aaron Jolliffe playtest) for Project FU v13. Extends FU bonds; does NOT fork projectfu.
 
 ## What P1 ships
@@ -23,8 +23,10 @@ Deeper Bonds (Aaron Jolliffe playtest) for Project FU v13. Extends FU bonds; doe
   adds the bond's strength to the roll just made. We hook `CheckHooks.renderCheck` to fill the invoked
   bond's clock and enforce **one bond per Check**; the free exception (a fleeting bond FORMED mid-Check
   by an FP invokes free on that Check) is not double-charged — FU owns the FP.
-- **Sheet display**: a `renderActorSheet` hook adds a tier gradient class + a 4-section clock (click to
-  fill, GM) onto each bond row.
+- **Sheet display**: a `renderActorSheet` hook adds a tier gradient + a 4-section clock (click to fill, GM)
+  onto each bond row, plus (v0.1.1) GM tier-CRUD controls: a per-row tier tag, **Solidify** (cap-checked,
+  disabled with a tooltip at the six-cap), **→ Eternal**, and a section-level **+ New fleeting bond**. UI
+  over the existing API — no new mechanics; name/emotions stay on FU's native bond editing.
 
 ## ⚠ Owed / risks (carried per god)
 

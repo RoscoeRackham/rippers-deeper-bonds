@@ -3,3 +3,10 @@
 .rdb-tier-solid { box-shadow: inset 3px 0 0 0 var(--rdb-solid, #c8102a); }
 .rdb-tier-eternal { box-shadow: inset 3px 0 0 0 var(--rdb-eternal, #7d3cff); }
 .rdb-clock { margin-left: 0.4em; letter-spacing: 1px; font-size: 0.85em; opacity: 0.9; }
+
+/* P1.1 tier-CRUD controls */
+.rdb-controls { display: inline-flex; align-items: center; gap: 0.35em; margin-left: 0.4em; flex-wrap: wrap; }
+.rdb-tier-tag { font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.5px; padding: 0 0.35em; border-radius: 3px; opacity: 0.85; }
+.rdb-btn { font-size: 0.75em; padding: 0 0.45em; line-height: 1.5; cursor: pointer; }
+.rdb-btn.rdb-disabled, .rdb-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.rdb-new-bond { margin-top: 0.3em; font-size: 0.78em; }

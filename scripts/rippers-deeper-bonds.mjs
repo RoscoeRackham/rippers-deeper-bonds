@@ -139,6 +139,17 @@ export function canInvokeOnCheck(invokedThisCheck = []) {
 	return (invokedThisCheck?.length ?? 0) === 0;
 }
 
+/**
+ * Pure UI state for a bond row's SOLIDIFY button: shown only for fleeting bonds, disabled (with a
+ * reason) when the solid cap is reached. Drives the sheet controls without touching the DOM.
+ * @returns {{ show: boolean, disabled: boolean, reason: string }}
+ */
+export function solidifyButtonState(record, records = [], cap = DEFAULT_SOLID_CAP) {
+	const show = record?.tier === TIER.FLEETING;
+	const disabled = show && !canAddSolid(records, cap);
+	return { show, disabled, reason: disabled ? `Solid bond cap reached (${cap})` : '' };
+}
+
 /* ============================================================ *
  *  Guarded Foundry / Project FU glue
  * ============================================================ */
@@ -260,31 +271,98 @@ async function relaxFuBondCap() {
 
 const TIER_CLASS = { fleeting: 'rdb-tier-fleeting', solid: 'rdb-tier-solid', eternal: 'rdb-tier-eternal' };
 
-/** Inject the tier gradient + a 4-section clock onto each bond row in FU's actor-bonds section. */
+const TIER_LABEL = { fleeting: 'Fleeting', solid: 'Solid', eternal: 'Eternal' };
+
+function mkButton(label, title, { disabled = false, onClick } = {}) {
+	const b = document.createElement('button');
+	b.type = 'button';
+	b.className = 'rdb-btn';
+	b.textContent = label;
+	b.title = title;
+	if (disabled) {
+		b.disabled = true;
+		b.classList.add('rdb-disabled');
+	} else if (onClick) {
+		b.addEventListener('click', (ev) => {
+			ev.preventDefault();
+			ev.stopPropagation();
+			onClick();
+		});
+	}
+	return b;
+}
+
+/**
+ * Inject the tier gradient, a 4-section clock, and GM tier-CRUD controls onto each bond row, plus a
+ * section-level "new fleeting bond" control. Reuses the existing API — no new mechanics. Defensive
+ * against FU's bond-row markup.
+ */
 function onRenderActorSheet(app, html) {
 	try {
 		const actor = app?.actor ?? app?.document;
 		if (!actor || !Array.isArray(actor.system?.bonds)) return;
+		const isGM = !!globalThis.game?.user?.isGM;
 		const root = html?.[0] ?? html;
 		const rows = root?.querySelectorAll?.('[data-bond-index], .bond, .bonds .resource-content, [data-key="system.bonds"] li');
 		if (!rows?.length) return;
 		const records = getRecords(actor);
 		rows.forEach((row, i) => {
 			const rec = records[i];
-			if (!rec) return;
+			if (!rec || row.querySelector?.('.rdb-controls')) return; // idempotent per row
 			row.classList?.add?.(TIER_CLASS[rec.tier] ?? '');
-			if (rec.tier === TIER.SOLID && !row.querySelector?.('.rdb-clock')) {
+
+			const controls = document.createElement('span');
+			controls.className = 'rdb-controls';
+
+			// tier indicator (always visible)
+			const tag = document.createElement('span');
+			tag.className = `rdb-tier-tag ${TIER_CLASS[rec.tier] ?? ''}`;
+			tag.textContent = TIER_LABEL[rec.tier] ?? rec.tier;
+			controls.appendChild(tag);
+
+			// clock for solid bonds (click to fill, GM)
+			if (rec.tier === TIER.SOLID) {
 				const clock = document.createElement('span');
 				clock.className = 'rdb-clock';
-				clock.title = `Bond clock ${rec.clock}/${CLOCK_SECTIONS}`;
+				clock.title = `Bond clock ${rec.clock}/${CLOCK_SECTIONS}${isGM ? ' — click to fill' : ''}`;
 				clock.textContent = '●'.repeat(rec.clock) + '○'.repeat(CLOCK_SECTIONS - rec.clock);
-				if (globalThis.game?.user?.isGM) {
+				if (isGM) {
 					clock.style.cursor = 'pointer';
 					clock.addEventListener('click', () => fillClock(actor, rec.name, 1));
 				}
-				row.appendChild?.(clock);
+				controls.appendChild(clock);
 			}
+
+			// GM tier-CRUD buttons
+			if (isGM) {
+				const sol = solidifyButtonState(rec, records);
+				if (sol.show) {
+					controls.appendChild(
+						mkButton('Solidify', sol.disabled ? sol.reason : 'Make this bond solid (adds a Bond Clock)', {
+							disabled: sol.disabled,
+							onClick: () => solidifyBond(actor, rec.name),
+						}),
+					);
+				}
+				if (rec.tier === TIER.SOLID) {
+					controls.appendChild(mkButton('→ Eternal', 'Promote to an eternal bond (off the six-cap, side-quest gated)', { onClick: () => promoteEternal(actor, rec.name) }));
+				}
+			}
+
+			row.appendChild?.(controls);
 		});
+
+		// section-level "new fleeting bond" control (GM), added once near the bond rows' common parent
+		if (isGM) {
+			const container = rows[0]?.parentElement;
+			if (container && !container.querySelector?.('.rdb-new-bond')) {
+				const add = mkButton('+ New fleeting bond', 'Create a new fleeting bond (edit name + emotions in the normal bond fields)', {
+					onClick: () => createFleetingBond(actor, { name: 'New Bond' }),
+				});
+				add.classList.add('rdb-new-bond');
+				container.appendChild(add);
+			}
+		}
 	} catch (err) {
 		console.warn(`${MODULE_ID} | sheet injection failed`, err);
 	}
