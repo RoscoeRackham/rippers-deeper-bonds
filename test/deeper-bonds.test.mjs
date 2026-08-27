@@ -145,3 +145,15 @@ test('solidifyButtonState: hidden for a solid or eternal bond', () => {
 	assert.equal(solidifyButtonState(makeRecord('s', TIER.SOLID), []).show, false);
 	assert.equal(solidifyButtonState(makeRecord('e', TIER.ETERNAL), []).show, false);
 });
+
+/* -------- invoke: FU check-push bond name (item 6 fix) -------- */
+
+import { pushBondName } from '../scripts/rippers-deeper-bonds.mjs';
+
+test('pushBondName reads FU 4.16.2 additionalData.push.with', () => {
+	assert.equal(pushBondName({ with: 'Ada', feelings: ['Loyalty'], strength: 3, ignoreFp: false }), 'Ada');
+	assert.equal(pushBondName({ bond: { name: 'Legacy' } }), 'Legacy');
+	assert.equal(pushBondName({ name: 'Old' }), 'Old');
+	assert.equal(pushBondName({}), null);
+	assert.equal(pushBondName(undefined), null);
+});

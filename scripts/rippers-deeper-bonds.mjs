@@ -140,6 +140,15 @@ export function canInvokeOnCheck(invokedThisCheck = []) {
 }
 
 /**
+ * The invoked bond's NAME out of FU's check-push payload. Verified against projectfu 4.16.2
+ * (checks/check-push.mjs getPushParams): `additionalData.push = { with, feelings, strength, ignoreFp }`
+ * — the bond name is `push.with`. Legacy shapes kept as fallbacks.
+ */
+export function pushBondName(push) {
+	return push?.with ?? push?.bond?.name ?? push?.name ?? null;
+}
+
+/**
  * Pure UI state for a bond row's SOLIDIFY button: shown only for fleeting bonds, disabled (with a
  * reason) when the solid cap is reached. Drives the sheet controls without touching the DOM.
  * @returns {{ show: boolean, disabled: boolean, reason: string }}
@@ -435,7 +444,7 @@ if (globalThis.Hooks?.once) {
 				if (key && seen.has(key)) return; // one bond per Check
 				const speaker = globalThis.ChatMessage?.getSpeaker?.() ?? {};
 				const actor = globalThis.game?.actors?.get?.(speaker.actor);
-				const bondName = push?.bond?.name ?? push?.name;
+				const bondName = pushBondName(push); // FU 4.16.2: additionalData.push.with
 				if (actor && bondName) {
 					onBondInvoked(actor, bondName, { invokedThisCheck: [] });
 					if (key) seen.add(key);

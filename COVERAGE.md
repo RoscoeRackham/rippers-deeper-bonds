@@ -1,6 +1,6 @@
 # rippers-deeper-bonds — coverage, owed items & Austin's verify checklist
 
-**Status: v0.1.2 — Phase 1 + sheet tier-CRUD buttons, fixed to render on FU's live sheet. 18/18 tests green. Published.**
+**Status: v0.1.3 — P1 + tier-CRUD buttons + invoke clock-fill fixed (bond name = push.with). 19/19 tests green. Published.**
 Deeper Bonds (Aaron Jolliffe playtest) for Project FU v13. Extends FU bonds; does NOT fork projectfu.
 
 ## What P1 ships
@@ -45,9 +45,8 @@ Deeper Bonds (Aaron Jolliffe playtest) for Project FU v13. Extends FU bonds; doe
    Loyalty/Affection emotion-matching in bond-rule-predicates is broken FU-side. Not ours — flag if an
    adopted class predicates on Loyalty/Affection.
 5. **6→8 cap (ruling 2)** needs detecting *Power of Friendship* + *Empathetic* (class skills) — P3.
-6. **check-push data shape** — the exact field carrying the invoked bond's name in `additionalData.push`
-   is read defensively and must be **verified at install** (same internal-coupling posture as
-   rippers-conditions; confirm on Austin's 4.16.2).
+6. **check-push data shape — RESOLVED (v0.1.3).** Bond name is `additionalData.push.with` (verified 4.16.2
+   checks/check-push.mjs). `pushBondName()` reads it; the renderCheck clock-fill hook now fills the clock.
 
 ## Table-adjudicated (NOT automated — UI hooks only)
 
