@@ -1,6 +1,6 @@
 # rippers-deeper-bonds — coverage, owed items & Austin's verify checklist
 
-**Status: v0.1.2 — Phase 1 + sheet tier-CRUD buttons, fixed to render on FU's live sheet. 18/18 tests green. Published.**
+**Status: v0.1.2 published (P1 + buttons). P2 (ladder effects + triggers + solidify) BUILT on `main`, 26/26 tests green, HELD for the next release (bundling Limner's CSS pass).**
 Deeper Bonds (Aaron Jolliffe playtest) for Project FU v13. Extends FU bonds; does NOT fork projectfu.
 
 ## What P1 ships
@@ -56,9 +56,20 @@ Sever interactions; the half-Miasma-interlude (⚠ unruled — deliberately not 
 
 ## Not in P1 (P2/P3)
 
-- **P2**: strength-ladder EFFECTS — str2 cleanse (DEPEND on rippers-conditions' status API), str2
-  cover-regen (strength×5 MP, one bond/trigger), str3 attribute-die-up for the scene, str4 skill-grant
-  slot; the 5 clock-fill triggers; solidify-at-rest UI.
+- **P2 (BUILT on `main`, held)**: strength-ladder EFFECTS + clock-fill trigger controls + solidify-at-rest.
+  - `ladderAbilities(strength,tier)` gates: cleanse/coverRegen at str2, attr-die-up at str3, skill-grant at eternal.
+  - **str2 cleanse** `cleanseWithBond` — DEPENDS on rippers-conditions (`clearAffliction`/`clearRegeneration`),
+    generic FU status falls back to `effect.delete()`; capped at `strength`× per rest.
+  - **str2 cover-regen** `coverRegen` — one qualifying bond (strongest; ruling 5), strength×5 MP both ways
+    via FU ResourcePipeline (`'mp'`, feature-detected).
+  - **str3** `raiseAttributeDie` — once/scene, one die size up (`d6→d8→d10→d12`), reverted at endOfCombat.
+  - **str4** `setEternalSkillGrant` — stores the GM-picked skill slot on the record (pick/apply manual).
+  - clock-fill trigger buttons (opportunity/interlude/NPC-first/villain-FP → one-section fill) + a
+    **Solidify-at-rest** dialog (`solidifyAtRest`/`planSolidifyAtRest`). Per-rest/scene counters in
+    `flags.rippers-deeper-bonds.limits`, reset on REST_EVENT / endOfCombat.
+  - ⚠ VERIFY AT INSTALL (4.16.2): MP recovery via `ResourceRequest(...,'mp',...)`; attribute die path
+    `system.attributes.<dex/ins/mig/wlp>.current` string; FU `REST_EVENT` payload actor field. CSS for the
+    new buttons is Limner's pass (kept out of scripts).
 - **P3**: class integration (Penny Knight strength reads, Naturalist fleeting Quarry bonds, Witness
   Hound bond, Sin-Eater/Cardinal emotion-cost); 6→8 cap detection; Status=solid reconciliation.
 

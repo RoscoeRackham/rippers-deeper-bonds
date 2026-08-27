@@ -151,6 +151,92 @@ export function solidifyButtonState(record, records = [], cap = DEFAULT_SOLID_CA
 }
 
 /* ============================================================ *
+ *  Pure core — P2 strength ladder, limits, cover-regen, solidify
+ * ============================================================ */
+
+/** Which ladder abilities a bond has, by strength + tier. Str4 = eternal. */
+export function ladderAbilities(strength, tier) {
+	const s = Number(strength) || 0;
+	return {
+		cleanse: s >= 2,
+		coverRegen: s >= 2,
+		coverRegenMp: s >= 2 ? s * 5 : 0, // strength × 5 MP both ways
+		attrDieUp: s >= 3,
+		skillGrant: tier === TIER.ETERNAL, // str-4 eternal skill-grant
+	};
+}
+
+/** Str2 cleanse is usable `strength` times per rest. */
+export function cleanseUsesPerRest(strength) {
+	return Math.max(0, Number(strength) || 0);
+}
+export function canCleanse(strength, usesThisRest = 0) {
+	return (Number(strength) || 0) >= 2 && (Number(usesThisRest) || 0) < cleanseUsesPerRest(strength);
+}
+
+/** Cover-regen MP for a bond of this strength (0 below str2). */
+export function coverRegenAmount(strength) {
+	const s = Number(strength) || 0;
+	return s >= 2 ? s * 5 : 0;
+}
+
+/** Ruling 5: one bond's cover-regen per trigger — pick the strongest qualifying bond. */
+export function pickCoverRegenBond(candidates = []) {
+	const q = candidates.filter((c) => (Number(c?.strength) || 0) >= 2);
+	if (!q.length) return null;
+	return q.reduce((best, c) => ((Number(c.strength) || 0) > (Number(best.strength) || 0) ? c : best));
+}
+
+/** Str3 attribute-die-up is once per scene. */
+export function canRaiseDieThisScene(usedThisScene = false) {
+	return !usedThisScene;
+}
+
+/** FU attribute die ladder; raise one size (capped at d12). */
+export const DIE_LADDER = Object.freeze(['d6', 'd8', 'd10', 'd12']);
+export function raiseDie(die) {
+	const i = DIE_LADDER.indexOf(die);
+	return i >= 0 && i < DIE_LADDER.length - 1 ? DIE_LADDER[i + 1] : die;
+}
+
+/**
+ * Solidify-at-rest: turn selected fleeting bonds solid (respecting the cap), keep solid/eternal, and
+ * ERASE every remaining fleeting bond (selected-but-over-cap included). Writing a new solid + changing
+ * an emotion are separate manual steps. Returns the new record set (fleeting clocks reset to 0 on solidify).
+ */
+export function planSolidifyAtRest(records = [], selectedFleeting = [], cap = DEFAULT_SOLID_CAP) {
+	const sel = new Set(selectedFleeting);
+	let solidCount = records.filter(isSolid).length;
+	const out = [];
+	for (const r of records) {
+		if (r.tier === TIER.FLEETING) {
+			if (sel.has(r.name) && solidCount < cap) {
+				out.push(makeRecord(r.name, TIER.SOLID, 0));
+				solidCount++;
+			}
+			// every other fleeting is erased (not carried forward)
+		} else {
+			out.push(r); // solid / eternal survive
+		}
+	}
+	return out;
+}
+
+/** Interlude fills a clock once between rests. */
+export function canInterludeFill(usedSinceRest = false) {
+	return !usedSinceRest;
+}
+
+/** Clock-fill trigger labels (for GM controls; all resolve to a one-section fill). */
+export const CLOCK_TRIGGER = Object.freeze({
+	OPPORTUNITY: 'opportunity',
+	INTERLUDE: 'interlude',
+	INVOKE: 'invoke',
+	NPC_FIRST_APPEARANCE: 'npc-first-appearance',
+	VILLAIN_FP: 'villain-fp',
+});
+
+/* ============================================================ *
  *  Guarded Foundry / Project FU glue
  * ============================================================ */
 
@@ -235,6 +321,159 @@ export async function fillClock(actor, name, sections = 1) {
 	}
 	// emotionDelta emotions are a player choice (which axis/pole) — surfaced to the GM, not auto-picked.
 	return result;
+}
+
+/* ============================================================ *
+ *  P2 — strength-ladder effects, limits, solidify-at-rest
+ *  Per-rest / per-scene counters live in flags.rippers-deeper-bonds.limits, reset on FU's REST_EVENT
+ *  (cleanse + interlude) and endOfCombat (die-up). Str2 cleanse DEPENDS on rippers-conditions' status
+ *  API — it is not duplicated here.
+ * ============================================================ */
+
+const LIMITS_FLAG = 'limits';
+const CONDITIONS_ID = 'rippers-conditions';
+
+function getLimits(actor) {
+	return actor?.getFlag?.(MODULE_ID, LIMITS_FLAG) ?? { cleanse: {}, dieUpScene: false };
+}
+async function setLimits(actor, limits) {
+	await actor.setFlag(MODULE_ID, LIMITS_FLAG, limits);
+}
+
+/** Bond strength as FU computes it (emotions + bonus + global), read off the live bond. */
+export function bondStrength(actor, name) {
+	const bond = actor?.system?.bonds?.find?.((b) => b.name === name);
+	if (!bond) return 0;
+	return Number(bond.strength) || deeperStrength(bond); // FU getter if present, else our mirror
+}
+
+/** Reach the rippers-conditions status API, if installed + active. */
+function conditionsApi() {
+	return globalThis.game?.modules?.get?.(CONDITIONS_ID)?.api ?? null;
+}
+
+/**
+ * Str2 — cleanse one status off the bonded character (an action; `strength`× per rest). Depends on
+ * rippers-conditions for status removal (clearAffliction / clearRegeneration); a generic FU status
+ * falls back to FU's toggleStatusEffect. Enforces the per-rest cap.
+ * @returns {'cleansed'|'exhausted'|'too-weak'|'noop'}
+ */
+export async function cleanseWithBond(actor, name, { statusId = AFFLICTION_STATUS } = {}) {
+	if (!isActiveGM() || !actor) return 'noop';
+	const strength = bondStrength(actor, name);
+	const limits = getLimits(actor);
+	const used = Number(limits.cleanse?.[name]) || 0;
+	if (strength < 2) return 'too-weak';
+	if (!canCleanse(strength, used)) return 'exhausted';
+	const targetActor = globalThis.game?.actors?.getName?.(name) ?? actor; // bonded character if it's a world actor
+	const cond = conditionsApi();
+	let done = false;
+	if (cond && statusId === AFFLICTION_STATUS && cond.clearAffliction) done = await cond.clearAffliction(targetActor);
+	else if (cond && statusId === REGENERATION_STATUS && cond.clearRegeneration) done = await cond.clearRegeneration(targetActor);
+	else {
+		// generic FU status — remove the effect carrying it, if present
+		const eff = targetActor?.effects?.find?.((e) => e.statuses?.has?.(statusId));
+		if (eff) {
+			await eff.delete();
+			done = true;
+		}
+	}
+	if (!done) return 'noop';
+	limits.cleanse = { ...(limits.cleanse ?? {}), [name]: used + 1 };
+	await setLimits(actor, limits);
+	return 'cleansed';
+}
+
+/**
+ * Str2 — cover-regen: when cover triggers, ONE qualifying bond regens (strength×5) MP both ways
+ * (ruling 5). Applies MP recovery through FU's ResourcePipeline (feature-detected, fail-soft).
+ * @param {object} actor  the covering character
+ * @param {string[]} candidateNames  bonds that qualify on this cover
+ */
+export async function coverRegen(actor, candidateNames = []) {
+	if (!isActiveGM() || !actor) return null;
+	const candidates = candidateNames.map((n) => ({ name: n, strength: bondStrength(actor, n) }));
+	const chosen = pickCoverRegenBond(candidates);
+	if (!chosen) return null;
+	const amount = coverRegenAmount(chosen.strength);
+	const other = globalThis.game?.actors?.getName?.(chosen.name) ?? null;
+	const fu = await getFuPipelines();
+	if (fu) {
+		for (const who of [actor, other].filter(Boolean)) {
+			try {
+				const req = new fu.ResourceRequest(fu.InlineSourceInfo.fromInstance(who), [who], 'mp', amount, false);
+				await fu.ResourcePipeline.processRecovery(req);
+			} catch (err) {
+				console.warn(`${MODULE_ID} | cover-regen MP apply failed`, err);
+			}
+		}
+	}
+	return { bond: chosen.name, amount };
+}
+
+/**
+ * Str3 — on invoke, once per scene, raise one Attribute die one size for the scene. Applies a tagged
+ * update to `system.attributes.<attr>.current`, recording the original to revert at scene end.
+ * @param {string} attr  one of dex/ins/mig/wlp
+ */
+export async function raiseAttributeDie(actor, name, attr) {
+	if (!isActiveGM() || !actor) return 'noop';
+	if (bondStrength(actor, name) < 3) return 'too-weak';
+	const limits = getLimits(actor);
+	if (!canRaiseDieThisScene(limits.dieUpScene)) return 'used-this-scene';
+	const cur = actor?.system?.attributes?.[attr]?.current;
+	const next = raiseDie(cur);
+	if (!cur || next === cur) return 'noop';
+	// record original for scene-end revert
+	const scene = { ...(limits.dieUp ?? {}), attr, from: cur };
+	await actor.update({ [`system.attributes.${attr}.current`]: next });
+	await setLimits(actor, { ...limits, dieUpScene: true, dieUp: scene });
+	return 'raised';
+}
+
+/** Str4 eternal — store the GM-chosen granted-skill slot on the bond record (pick + apply is manual). */
+export async function setEternalSkillGrant(actor, name, { skillName = '', skillUuid = '' } = {}) {
+	if (!isActiveGM() || !actor) return false;
+	const records = getRecords(actor);
+	const rec = records.find((r) => r.name === name);
+	if (!rec || rec.tier !== TIER.ETERNAL) return false;
+	rec.grantedSkill = { skillName, skillUuid };
+	await setRecords(actor, records);
+	return true;
+}
+
+/** Solidify-at-rest: apply the plan — solidify selected fleeting (cap), ERASE remaining fleeting bonds. */
+export async function solidifyAtRest(actor, selectedFleeting = [], { cap = DEFAULT_SOLID_CAP } = {}) {
+	if (!isActiveGM() || !actor) return false;
+	const records = getRecords(actor);
+	const kept = planSolidifyAtRest(records, selectedFleeting, cap);
+	const keptNames = new Set(kept.map((r) => r.name));
+	// drop erased fleeting from the FU bond array
+	const bonds = (actor.system.bonds ?? []).filter((b) => keptNames.has(b.name));
+	await actor.update({ 'system.bonds': bonds });
+	await setRecords(actor, kept);
+	return true;
+}
+
+/** Reset per-rest limits (cleanse uses + interlude flags) — wired to FU's REST_EVENT. */
+async function onRest(actor) {
+	if (!isActiveGM() || !actor) return;
+	const limits = getLimits(actor);
+	if (limits.cleanse || limits.interlude) await setLimits(actor, { ...limits, cleanse: {}, interlude: {} });
+}
+
+/** Scene end: revert a die-up and clear the per-scene flag — wired to endOfCombat. */
+async function onSceneEnd(actor) {
+	if (!isActiveGM() || !actor) return;
+	const limits = getLimits(actor);
+	if (limits.dieUp?.attr) {
+		try {
+			await actor.update({ [`system.attributes.${limits.dieUp.attr}.current`]: limits.dieUp.from });
+		} catch (err) {
+			console.warn(`${MODULE_ID} | die-up revert failed`, err);
+		}
+	}
+	if (limits.dieUpScene || limits.dieUp) await setLimits(actor, { ...limits, dieUpScene: false, dieUp: null });
 }
 
 /* -------- invoke: piggyback FU check-push -------- */
@@ -374,19 +613,29 @@ function injectBondControls(app) {
 				}
 				if (rec.tier === TIER.SOLID) {
 					controls.appendChild(mkButton('→ Eternal', 'Promote to an eternal bond (off the six-cap, side-quest gated)', { onClick: () => promoteEternal(actor, rec.name) }));
+					// clock-fill trigger buttons (each fills one section) — for triggers FU can't auto-detect
+					controls.appendChild(mkButton('◷ Opp', 'Fill a clock section — opportunity', { onClick: () => fillClock(actor, rec.name, 1) }));
+					controls.appendChild(mkButton('◷ Interlude', 'Fill a clock section — interlude (once between rests)', { onClick: () => fillClock(actor, rec.name, 1) }));
+					controls.appendChild(mkButton('◷ NPC', 'Fill a clock section — NPC first appearance this session', { onClick: () => fillClock(actor, rec.name, 1) }));
+					controls.appendChild(mkButton('◷ Villain FP', 'Fill a clock section — a Fabula Point from this Villain’s appearance', { onClick: () => fillClock(actor, rec.name, 1) }));
 				}
 			}
 
 			row.appendChild?.(controls);
 		});
 
-		// section-level "new fleeting bond" control (GM), appended once inside the bonds fieldset
+		// section-level controls (GM), appended once inside the bonds fieldset
 		if (isGM && !fieldset.querySelector?.('.rdb-new-bond')) {
 			const add = mkButton('+ New fleeting bond', 'Create a new fleeting bond (edit name + emotions in the normal bond fields)', {
 				onClick: () => createFleetingBond(actor, { name: 'New Bond' }),
 			});
 			add.classList.add('rdb-new-bond');
 			fieldset.appendChild(add);
+			const solidify = mkButton('Solidify at rest…', 'Turn selected fleeting bonds solid (cap-checked); remaining fleeting are erased', {
+				onClick: () => openSolidifyDialog(actor),
+			});
+			solidify.classList.add('rdb-solidify-rest');
+			fieldset.appendChild(solidify);
 		}
 	} catch (err) {
 		console.warn(`${MODULE_ID} | sheet injection failed`, err);
@@ -404,7 +653,44 @@ export function getModuleApi() {
 		onBondInvoked,
 		deeperStrength,
 		TIER,
+		// P2 — ladder effects, limits, solidify
+		bondStrength,
+		ladderAbilities,
+		cleanseWithBond,
+		coverRegen,
+		raiseAttributeDie,
+		setEternalSkillGrant,
+		solidifyAtRest,
 	};
+}
+
+/** Open a simple solidify-at-rest dialog: pick which fleeting bonds become solid (cap-checked). */
+async function openSolidifyDialog(actor) {
+	const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+	if (!DialogV2 || !actor) return;
+	const records = getRecords(actor);
+	const fleeting = records.filter((r) => r.tier === TIER.FLEETING);
+	if (!fleeting.length) {
+		globalThis.ui?.notifications?.info?.('No fleeting bonds to solidify.');
+		return;
+	}
+	const rows = fleeting.map((r) => `<label style="display:block"><input type="checkbox" name="sol" value="${r.name}"/> ${r.name}</label>`).join('');
+	await DialogV2.wait({
+		window: { title: `Solidify at rest — ${actor.name}` },
+		content: `<form><p>Selected fleeting bonds become solid (cap ${DEFAULT_SOLID_CAP}). <strong>All remaining fleeting bonds are erased.</strong></p>${rows}</form>`,
+		buttons: [
+			{
+				action: 'apply',
+				label: 'Solidify',
+				default: true,
+				callback: (_ev, button) => {
+					const chosen = Array.from(button.form.querySelectorAll('input[name="sol"]:checked')).map((el) => el.value);
+					return solidifyAtRest(actor, chosen);
+				},
+			},
+			{ action: 'cancel', label: 'Cancel' },
+		],
+	});
 }
 
 /* -------- boot (guarded: inert under `node --test`) -------- */
@@ -414,6 +700,19 @@ if (globalThis.Hooks?.once) {
 		const mod = globalThis.game?.modules?.get?.(MODULE_ID);
 		if (mod) mod.api = getModuleApi();
 		if (isActiveGM()) relaxFuBondCap();
+
+		// P2 limit resets: per-rest (cleanse/interlude) on FU REST_EVENT; per-scene (die-up) on endOfCombat.
+		const FUHooks = globalThis.game?.projectfu?.hooks;
+		const REST_EVENT = FUHooks?.REST_EVENT ?? 'projectfu.events.rest';
+		const COMBAT_EVENT = FUHooks?.COMBAT_EVENT ?? 'projectfu.events.combat';
+		globalThis.Hooks.on(REST_EVENT, (event) => {
+			const actor = event?.actor ?? event?.actors?.[0];
+			if (actor) onRest(actor);
+		});
+		globalThis.Hooks.on(COMBAT_EVENT, (event) => {
+			if (event?.type !== 'endOfCombat') return;
+			for (const actor of Array.isArray(event?.actors) ? event.actors : []) onSceneEnd(actor);
+		});
 	});
 
 	// FU's ApplicationV2 PC sheet fires its OWN render hook (NOT renderActorSheet) — proven by
