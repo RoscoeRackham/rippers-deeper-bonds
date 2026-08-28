@@ -1,12 +1,63 @@
-/* Deeper Bonds — tier gradient + clock pips injected onto FU bond rows. */
-.rdb-tier-fleeting { opacity: 0.85; }
-.rdb-tier-solid { box-shadow: inset 3px 0 0 0 var(--rdb-solid, #c8102a); }
-.rdb-tier-eternal { box-shadow: inset 3px 0 0 0 var(--rdb-eternal, #7d3cff); }
-.rdb-clock { margin-left: 0.4em; letter-spacing: 1px; font-size: 0.85em; opacity: 0.9; }
+/* Deeper Bonds — tier tag, clock, and CRUD controls injected onto FU bond rows.
+   Rides Project FU's dark actor sheet: tints with our register accents (blood red = solid,
+   Miasma violet = eternal), and NEVER restyles FU's own bond fields. CSS-only; no DOM/logic change. */
 
-/* P1.1 tier-CRUD controls */
-.rdb-controls { display: inline-flex; align-items: center; gap: 0.35em; margin-left: 0.4em; flex-wrap: wrap; }
-.rdb-tier-tag { font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.5px; padding: 0 0.35em; border-radius: 3px; opacity: 0.85; }
-.rdb-btn { font-size: 0.75em; padding: 0 0.45em; line-height: 1.5; cursor: pointer; }
-.rdb-btn.rdb-disabled, .rdb-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.rdb-new-bond { margin-top: 0.3em; font-size: 0.78em; }
+:root {
+	--rdb-solid: #c8102a;   /* blood — solid tier */
+	--rdb-eternal: #7d3cff; /* Miasma violet — eternal tier (register: violet = the supernatural) */
+	--rdb-fleeting: #b8b0a8;/* quiet warm grey — fleeting tier */
+}
+
+/* Tier accent lives on the ROW as a left edge ONLY — never dim FU's own inputs.
+   (Was: .rdb-tier-fleeting{opacity:.85} on row.classList → dimmed the whole FU bond row.) */
+.rdb-tier-fleeting { box-shadow: inset 3px 0 0 0 var(--rdb-fleeting); }
+.rdb-tier-solid    { box-shadow: inset 3px 0 0 0 var(--rdb-solid); }
+.rdb-tier-eternal  { box-shadow: inset 3px 0 0 0 var(--rdb-eternal); }
+
+/* Controls cluster */
+.rdb-controls { display: inline-flex; align-items: center; gap: 0.4em; margin-left: 0.5em; flex-wrap: wrap; }
+
+/* Tier tag: a filled pill that actually encodes the tier and stays legible at sheet scale.
+   The tag also carries .rdb-tier-{tier}; these rules cancel the row's inset bar on the tag. */
+.rdb-tier-tag {
+	font-family: ui-monospace, "IBM Plex Mono", "SFMono-Regular", monospace;
+	font-size: 0.72rem; font-weight: 600; line-height: 1.5;
+	text-transform: uppercase; letter-spacing: 0.06em;
+	padding: 0.05em 0.5em; border-radius: 3px; border: 1px solid currentColor;
+	opacity: 1;
+}
+.rdb-tier-tag.rdb-tier-fleeting { color: var(--rdb-fleeting); background: none; box-shadow: none; }
+.rdb-tier-tag.rdb-tier-solid    { color: #ff5a6a; background: rgba(200, 16, 42, 0.18);  box-shadow: none; }
+.rdb-tier-tag.rdb-tier-eternal  { color: #b48cff; background: rgba(125, 60, 255, 0.20); box-shadow: none; }
+
+/* Clock: whole clock rendered in the solid accent so filled ● vs empty ○ reads at a glance
+   (single text node — can't per-char colour; bright-red ring vs disc separates far better than grey/grey). */
+.rdb-clock {
+	font-family: ui-monospace, "IBM Plex Mono", "SFMono-Regular", monospace;
+	margin-left: 0.2em; letter-spacing: 2px; font-size: 0.95rem; line-height: 1;
+	color: #ff5a6a; opacity: 1;
+}
+.rdb-clock:hover { filter: brightness(1.2); } /* GM sets inline cursor:pointer; give a hover cue */
+
+/* Buttons: give real vertical padding + a min hit box (was 0 vertical padding → sub-legible target). */
+.rdb-btn {
+	font-family: ui-monospace, "IBM Plex Mono", "SFMono-Regular", monospace;
+	font-size: 0.72rem; line-height: 1.4;
+	padding: 0.25em 0.6em; min-height: 1.9em;
+	border-radius: 3px; cursor: pointer;
+}
+.rdb-btn.rdb-disabled, .rdb-btn:disabled { opacity: 0.6; cursor: not-allowed; } /* was .45 — reason lives in title tooltip; keep the label legible */
+
+/* Section-level controls, appended once to the fieldset. */
+.rdb-new-bond { margin-top: 0.4em; }
+.rdb-solidify-rest { margin-top: 0.4em; margin-left: 0.4em; }
+
+/* SUGGESTED CLASS HOOKS for Artificer (structure is yours; these are optional, non-breaking):
+   1. Add `rdb-btn--tick` to the four ◷ clock-fill buttons (Opp/Interlude/NPC/Villain FP) so the
+      near-identical cluster reads as a quieter secondary group, distinct from Solidify / →Eternal.
+   2. Add `rdb-clock--clickable` to the clock span when isGM, instead of the inline cursor style,
+      so the pointer + hover affordance is class-driven.
+   Ready-made rules (inert until the classes exist):
+      .rdb-btn--tick { opacity: 0.82; }
+      .rdb-clock--clickable { cursor: pointer; }
+*/

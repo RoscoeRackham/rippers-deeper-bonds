@@ -521,10 +521,10 @@ const TIER_CLASS = { fleeting: 'rdb-tier-fleeting', solid: 'rdb-tier-solid', ete
 
 const TIER_LABEL = { fleeting: 'Fleeting', solid: 'Solid', eternal: 'Eternal' };
 
-function mkButton(label, title, { disabled = false, onClick } = {}) {
+function mkButton(label, title, { disabled = false, onClick, className } = {}) {
 	const b = document.createElement('button');
 	b.type = 'button';
-	b.className = 'rdb-btn';
+	b.className = className ? `rdb-btn ${className}` : 'rdb-btn';
 	b.textContent = label;
 	b.title = title;
 	if (disabled) {
@@ -603,7 +603,7 @@ function injectBondControls(app) {
 				clock.title = `Bond clock ${rec.clock}/${CLOCK_SECTIONS}${isGM ? ' — click to fill' : ''}`;
 				clock.textContent = '●'.repeat(rec.clock) + '○'.repeat(CLOCK_SECTIONS - rec.clock);
 				if (isGM) {
-					clock.style.cursor = 'pointer';
+					clock.classList.add('rdb-clock--clickable'); // class-driven pointer/hover (CSS tail)
 					clock.addEventListener('click', () => fillClock(actor, rec.name, 1));
 				}
 				controls.appendChild(clock);
@@ -623,10 +623,10 @@ function injectBondControls(app) {
 				if (rec.tier === TIER.SOLID) {
 					controls.appendChild(mkButton('→ Eternal', 'Promote to an eternal bond (off the six-cap, side-quest gated)', { onClick: () => promoteEternal(actor, rec.name) }));
 					// clock-fill trigger buttons (each fills one section) — for triggers FU can't auto-detect
-					controls.appendChild(mkButton('◷ Opp', 'Fill a clock section — opportunity', { onClick: () => fillClock(actor, rec.name, 1) }));
-					controls.appendChild(mkButton('◷ Interlude', 'Fill a clock section — interlude (once between rests)', { onClick: () => fillClock(actor, rec.name, 1) }));
-					controls.appendChild(mkButton('◷ NPC', 'Fill a clock section — NPC first appearance this session', { onClick: () => fillClock(actor, rec.name, 1) }));
-					controls.appendChild(mkButton('◷ Villain FP', 'Fill a clock section — a Fabula Point from this Villain’s appearance', { onClick: () => fillClock(actor, rec.name, 1) }));
+					controls.appendChild(mkButton('◷ Opp', 'Fill a clock section — opportunity', { className: 'rdb-btn--tick', onClick: () => fillClock(actor, rec.name, 1) }));
+					controls.appendChild(mkButton('◷ Interlude', 'Fill a clock section — interlude (once between rests)', { className: 'rdb-btn--tick', onClick: () => fillClock(actor, rec.name, 1) }));
+					controls.appendChild(mkButton('◷ NPC', 'Fill a clock section — NPC first appearance this session', { className: 'rdb-btn--tick', onClick: () => fillClock(actor, rec.name, 1) }));
+					controls.appendChild(mkButton('◷ Villain FP', 'Fill a clock section — a Fabula Point from this Villain’s appearance', { className: 'rdb-btn--tick', onClick: () => fillClock(actor, rec.name, 1) }));
 				}
 			}
 

@@ -1,8 +1,8 @@
 {
   "id": "rippers-deeper-bonds",
   "title": "Rippers \u2014 Deeper Bonds",
-  "description": "The campaign's Deeper Bonds system (Aaron Jolliffe playtest) for Project FU: bond tiers (fleeting/solid/eternal), 4-section Bond Clocks on solid bonds, a strength ladder, and invoke = +strength retroactive to the roll just made (via FU's check-push). Extends FU bonds without forking. P1: data model + clocks + tiered caps + invoke wiring.",
-  "version": "0.1.2",
+  "description": "The campaign's Deeper Bonds system (Aaron Jolliffe playtest) for Project FU: bond tiers (fleeting/solid/eternal), 4-section Bond Clocks on solid bonds, a strength ladder, and invoke = +strength retroactive to the roll just made (via FU's check-push). Extends FU bonds without forking. P1: data model + clocks + tiered caps + invoke wiring. P2: the strength ladder (cleanse, cover-regen, attribute-die raise, skill grant), clock-fill triggers, and solidify-at-rest.",
+  "version": "0.2.0",
   "authors": [
     {
       "name": "Rippers Unmasked"
@@ -43,7 +43,7 @@
   "download": "https://github.com/RoscoeRackham/rippers-deeper-bonds/releases/latest/download/rippers-deeper-bonds.zip",
   "flags": {
     "rippers-deeper-bonds": {
-      "note": "v0.1.2: fixed sheet injection \u2014 wired to renderFUStandardActorSheet (the hook FU's ApplicationV2 sheet actually fires; renderActorSheet did NOT fire, so buttons+clocks were missing) with the real 4.16.2 bonds-fieldset selector (legend.bond-add; rows = child div.flexrow indexed by delete button data-bond-index). P1 + tier-CRUD buttons + clocks now render. Extends FU bonds via flags; clock-strength -> bond.bonus. projectfu pinned 4.16.0/4.16.2."
+      "note": "v0.2.0: P2 strength-ladder effects (str2 action-cleanse via rippers-conditions + cover-regen strength\u00d75 MP; str3 raise one attribute die a size for the scene once/scene; str4 grant one of their skills at SL1), 4 clock-fill triggers, solidify-at-rest dialog, and invoke\u2192clock-fill reading the pushed bond name from additionalData.push.with (FU 4.16.2 check-push). Bundles Limner's CSS pass: tier accent moved to an inset left-edge so FU's own bond name/emotion/delete fields are never dimmed (was .rdb-tier-fleeting{opacity:.85} on the whole row), filled tier pills, brighter clock, real button hit-targets; class hooks rdb-btn--tick + rdb-clock--clickable applied. Extends FU bonds via flags; clock-strength -> bond.bonus. projectfu pinned 4.16.0/4.16.2."
     }
   }
 }
