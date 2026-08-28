@@ -201,9 +201,18 @@ export function canRaiseDieThisScene(usedThisScene = false) {
 	return !usedThisScene;
 }
 
-/** FU attribute die ladder; raise one size (capped at d12). */
+/**
+ * FU attribute die ladder; raise one size (capped at d12). Polymorphic: FU stores attribute dice as the
+ * NUMBER of die faces at `system.attributes.<attr>.base` (6/8/10/12 = d6…d12), so raiseDie(8)→10; it also
+ * accepts a 'dN' string form for convenience. Returns the input unchanged at the d12 cap.
+ */
 export const DIE_LADDER = Object.freeze(['d6', 'd8', 'd10', 'd12']);
+export const DIE_SIZES = Object.freeze([6, 8, 10, 12]);
 export function raiseDie(die) {
+	if (typeof die === 'number') {
+		const i = DIE_SIZES.indexOf(die);
+		return i >= 0 && i < DIE_SIZES.length - 1 ? DIE_SIZES[i + 1] : die;
+	}
 	const i = DIE_LADDER.indexOf(die);
 	return i >= 0 && i < DIE_LADDER.length - 1 ? DIE_LADDER[i + 1] : die;
 }
@@ -367,33 +376,88 @@ function conditionsApi() {
 }
 
 /**
- * Str2 — cleanse one status off the bonded character (an action; `strength`× per rest). Depends on
- * rippers-conditions for status removal (clearAffliction / clearRegeneration); a generic FU status
- * falls back to FU's toggleStatusEffect. Enforces the per-rest cap.
- * @returns {'cleansed'|'exhausted'|'too-weak'|'noop'}
+ * Fail-soft FU feature-detector — dynamically imports the ResourcePipeline symbols cover-regen needs
+ * from projectfu's internal paths (mirrors rippers-conditions' detector). Returns null + a console.warn
+ * on any drift so callers resolve instead of throwing. Cover-regen only needs the resource pipeline.
  */
-export async function cleanseWithBond(actor, name, { statusId = AFFLICTION_STATUS } = {}) {
+async function getFuPipelines() {
+	try {
+		const base = `/systems/${SYSTEM_ID}/module`;
+		const [res, inl] = await Promise.all([
+			import(`${base}/pipelines/resource-pipeline.mjs`),
+			import(`${base}/helpers/inline-helper.mjs`),
+		]);
+		const { ResourcePipeline, ResourceRequest } = res;
+		const { InlineSourceInfo } = inl;
+		if (!ResourcePipeline?.processRecovery || !ResourceRequest || !InlineSourceInfo) {
+			console.warn(`${MODULE_ID} | FU resource-pipeline symbols missing — cover-regen MP apply disabled this session.`);
+			return null;
+		}
+		return { ResourcePipeline, ResourceRequest, InlineSourceInfo };
+	} catch (err) {
+		console.warn(`${MODULE_ID} | could not load Project FU pipelines (FU version drift?) — cover-regen MP apply disabled.`, err);
+		return null;
+	}
+}
+
+/**
+ * The active FU affliction statuses Cleanse can lift (god ruling): FU's six + rippers-conditions' own
+ * custom 'affliction'. Regeneration is a benefit, not an affliction, so it is NOT in the cleanse set.
+ */
+export const FU_AFFLICTION_STATUSES = Object.freeze(['dazed', 'enraged', 'poisoned', 'shaken', 'slow', 'weak']);
+export const CLEANSABLE_STATUSES = Object.freeze([...FU_AFFLICTION_STATUSES, AFFLICTION_STATUS]);
+
+/** Pure: which cleansable statuses are currently active on an actor (reads actor.statuses Set). */
+export function qualifyingCleanseStatuses(actor) {
+	const set = actor?.statuses;
+	const has = (id) => (set?.has ? set.has(id) : Array.isArray(set) ? set.includes(id) : false);
+	return CLEANSABLE_STATUSES.filter(has);
+}
+
+/** Remove one status from an actor: rippers-conditions API for our custom ids, FU's own toggle otherwise. */
+async function removeStatus(actor, statusId) {
+	const cond = conditionsApi();
+	if (statusId === AFFLICTION_STATUS && cond?.clearAffliction) return !!(await cond.clearAffliction(actor));
+	if (statusId === REGENERATION_STATUS && cond?.clearRegeneration) return !!(await cond.clearRegeneration(actor));
+	if (typeof actor?.toggleStatusEffect === 'function') {
+		await actor.toggleStatusEffect(statusId, { active: false }); // FU/core statuses (dazed, weak, …)
+		return true;
+	}
+	const eff = actor?.effects?.find?.((e) => e.statuses?.has?.(statusId)); // last resort: delete the carrier
+	if (eff) {
+		await eff.delete();
+		return true;
+	}
+	return false;
+}
+
+/**
+ * Str2 — cleanse ONE active FU affliction status off the bonded character (an action; `strength`× per
+ * rest). Reads the actor's live statuses: 0 qualifying → 'noop'; exactly 1 → remove it; several with no
+ * explicit pick → 'ambiguous' (the caller opens a picker and re-calls with {statusId}). The per-rest
+ * budget is spent ONLY on a successful removal.
+ * @returns {'cleansed'|'ambiguous'|'exhausted'|'too-weak'|'noop'}
+ */
+export async function cleanseWithBond(actor, name, { statusId = null } = {}) {
 	if (!isActiveGM() || !actor) return 'noop';
 	const strength = bondStrength(actor, name);
+	if (strength < 2) return 'too-weak';
 	const limits = getLimits(actor);
 	const used = Number(limits.cleanse?.[name]) || 0;
-	if (strength < 2) return 'too-weak';
 	if (!canCleanse(strength, used)) return 'exhausted';
 	const targetActor = globalThis.game?.actors?.getName?.(name) ?? actor; // bonded character if it's a world actor
-	const cond = conditionsApi();
-	let done = false;
-	if (cond && statusId === AFFLICTION_STATUS && cond.clearAffliction) done = await cond.clearAffliction(targetActor);
-	else if (cond && statusId === REGENERATION_STATUS && cond.clearRegeneration) done = await cond.clearRegeneration(targetActor);
-	else {
-		// generic FU status — remove the effect carrying it, if present
-		const eff = targetActor?.effects?.find?.((e) => e.statuses?.has?.(statusId));
-		if (eff) {
-			await eff.delete();
-			done = true;
-		}
+	const qualifying = qualifyingCleanseStatuses(targetActor);
+	let toRemove = statusId;
+	if (!toRemove) {
+		if (qualifying.length === 0) return 'noop';
+		if (qualifying.length > 1) return 'ambiguous'; // caller must pick, then re-call with {statusId}
+		toRemove = qualifying[0];
+	} else if (!qualifying.includes(toRemove)) {
+		return 'noop'; // the picked status is no longer active
 	}
+	const done = await removeStatus(targetActor, toRemove);
 	if (!done) return 'noop';
-	limits.cleanse = { ...(limits.cleanse ?? {}), [name]: used + 1 };
+	limits.cleanse = { ...(limits.cleanse ?? {}), [name]: used + 1 }; // budget spent only on success
 	await setLimits(actor, limits);
 	return 'cleansed';
 }
@@ -426,8 +490,9 @@ export async function coverRegen(actor, candidateNames = []) {
 }
 
 /**
- * Str3 — on invoke, once per scene, raise one Attribute die one size for the scene. Applies a tagged
- * update to `system.attributes.<attr>.current`, recording the original to revert at scene end.
+ * Str3 — on invoke, once per scene, raise one Attribute die one size for the scene. FU stores the die at
+ * `system.attributes.<attr>.base` as a NUMBER of faces (8 = d8), so we read/write `.base` — reading
+ * `.current` (which does not exist) made every die look maxed. Records the original to revert at scene end.
  * @param {string} attr  one of dex/ins/mig/wlp
  */
 export async function raiseAttributeDie(actor, name, attr) {
@@ -435,12 +500,12 @@ export async function raiseAttributeDie(actor, name, attr) {
 	if (bondStrength(actor, name) < 3) return 'too-weak';
 	const limits = getLimits(actor);
 	if (!canRaiseDieThisScene(limits.dieUpScene)) return 'used-this-scene';
-	const cur = actor?.system?.attributes?.[attr]?.current;
+	const cur = actor?.system?.attributes?.[attr]?.base;
 	const next = raiseDie(cur);
-	if (!cur || next === cur) return 'noop';
+	if (!cur || next === cur) return 'noop'; // unknown attr or already at d12
 	// record original for scene-end revert
 	const scene = { ...(limits.dieUp ?? {}), attr, from: cur };
-	await actor.update({ [`system.attributes.${attr}.current`]: next });
+	await actor.update({ [`system.attributes.${attr}.base`]: next });
 	await setLimits(actor, { ...limits, dieUpScene: true, dieUp: scene });
 	return 'raised';
 }
@@ -482,7 +547,7 @@ async function onSceneEnd(actor) {
 	const limits = getLimits(actor);
 	if (limits.dieUp?.attr) {
 		try {
-			await actor.update({ [`system.attributes.${limits.dieUp.attr}.current`]: limits.dieUp.from });
+			await actor.update({ [`system.attributes.${limits.dieUp.attr}.base`]: limits.dieUp.from });
 		} catch (err) {
 			console.warn(`${MODULE_ID} | die-up revert failed`, err);
 		}
@@ -573,7 +638,13 @@ function addLadderButtons(bar, actor, rec) {
 				className: 'rdb-btn--ladder',
 				disabled: !ok,
 				onClick: async () => {
-					const r = await cleanseWithBond(actor, rec.name);
+					let r = await cleanseWithBond(actor, rec.name);
+					if (r === 'ambiguous') {
+						const targetActor = globalThis.game?.actors?.getName?.(rec.name) ?? actor;
+						const chosen = await pickCleanseStatus(targetActor);
+						if (!chosen) return;
+						r = await cleanseWithBond(actor, rec.name, { statusId: chosen });
+					}
 					notifyResult({ cleansed: `Cleansed a status via ${rec.name}.`, exhausted: 'No cleanses left until the next rest.', 'too-weak': 'Bond is too weak to cleanse (needs strength 2).', noop: 'No status to cleanse.' }, r);
 				},
 			}),
@@ -633,11 +704,21 @@ async function pickAttribute(actor) {
 	if (!DialogV2) return null;
 	const buttons = ATTR_KEYS.map((a) => ({
 		action: a,
-		label: `${a.toUpperCase()} (${actor?.system?.attributes?.[a]?.current ?? '?'})`,
+		label: `${a.toUpperCase()} (d${actor?.system?.attributes?.[a]?.base ?? '?'})`,
 		callback: () => a,
 	}));
 	buttons.push({ action: 'cancel', label: 'Cancel', callback: () => null });
 	return DialogV2.wait({ window: { title: 'Raise which attribute die?' }, content: '<p>Raise one attribute die a size for the scene.</p>', buttons });
+}
+
+/** Small GM picker: which active status to cleanse (only shown when several qualify). Resolves to id or null. */
+async function pickCleanseStatus(actor) {
+	const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+	const options = qualifyingCleanseStatuses(actor);
+	if (!DialogV2 || !options.length) return null;
+	const buttons = options.map((id) => ({ action: id, label: id.charAt(0).toUpperCase() + id.slice(1), callback: () => id }));
+	buttons.push({ action: 'cancel', label: 'Cancel', callback: () => null });
+	return DialogV2.wait({ window: { title: 'Cleanse which status?' }, content: '<p>Remove one active status.</p>', buttons });
 }
 
 /** Small GM prompt: name one of the bonded character's skills to grant at SL1. Resolves to string or null. */

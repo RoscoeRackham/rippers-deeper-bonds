@@ -16,7 +16,28 @@ import {
 	planSolidifyAtRest,
 	canInterludeFill,
 	cleanseWithBond,
+	coverRegen,
+	qualifyingCleanseStatuses,
+	FU_AFFLICTION_STATUSES,
+	CLEANSABLE_STATUSES,
 } from '../scripts/rippers-deeper-bonds.mjs';
+
+/** Minimal FU-ish actor stub. statuses is a Set; toggleStatusEffect records removals. */
+function stubActor({ strength = 3, statuses = [], attrs = { dex: 8, ins: 8, mig: 8, wlp: 8 }, limits = { cleanse: {}, dieUpScene: false } } = {}) {
+	const removed = [];
+	const flag = { ...limits };
+	return {
+		removed,
+		name: 'x',
+		system: { bonds: [{ name: 'x', strength }], attributes: Object.fromEntries(Object.entries(attrs).map(([k, v]) => [k, { base: v }])) },
+		statuses: new Set(statuses),
+		effects: [],
+		getFlag: () => flag,
+		setFlag: async (_m, _k, v) => Object.assign(flag, v),
+		update: async () => {},
+		toggleStatusEffect: async (id) => { removed.push(id); return true; },
+	};
+}
 
 /* -------- ladder gating -------- */
 
@@ -100,14 +121,65 @@ test('canInterludeFill: once between rests', () => {
 	assert.equal(canInterludeFill(true), false);
 });
 
-/* -------- ladder-effect API resolves (regression: AFFLICTION_STATUS must be defined) -------- */
+/* -------- FU-integration regressions (v0.2.2: the three live-verified ladder bugs) -------- */
 
-test('cleanseWithBond resolves instead of throwing on its status constant (v0.2.1 regression)', async () => {
-	// v0.2.0 shipped with AFFLICTION_STATUS/REGENERATION_STATUS referenced but never declared, so the
-	// (now wired) Cleanse button would throw ReferenceError on click. This asserts the constant exists.
+function withGame(fn) {
 	globalThis.game = { user: { isActiveGM: true }, modules: { get: () => null }, actors: { getName: () => null } };
 	globalThis.ui = { notifications: { info: () => {}, warn: () => {} } };
-	const actor = { name: 'x', system: { bonds: [{ name: 'x', strength: 3 }] }, effects: [], getFlag: () => ({ cleanse: {} }), setFlag: async () => {} };
-	const r = await cleanseWithBond(actor, 'x');
-	assert.equal(r, 'noop'); // no conditions module + no matching effect -> noop, not a throw
+	return fn();
+}
+
+// BUG 2 — die stored as a NUMBER at .base; raise 8->10, cap 12 (was reading .current -> undefined -> 'maxed').
+test('raiseDie handles numeric base dice: 8->10, 12->noop (v0.2.2)', () => {
+	assert.equal(raiseDie(8), 10);
+	assert.equal(raiseDie(10), 12);
+	assert.equal(raiseDie(12), 12); // d12 cap
+	assert.equal(raiseDie('d8'), 'd10'); // string form still works
+});
+
+// BUG 1 — coverRegen used getFuPipelines() which was undefined -> ReferenceError. Must resolve when FU is
+// unavailable (dynamic import fails in node): the detector returns null and coverRegen still resolves.
+test('coverRegen resolves (no ReferenceError) when FU pipelines are unavailable (v0.2.2)', async () => {
+	await withGame(async () => {
+		const actor = stubActor({ strength: 3 });
+		const r = await coverRegen(actor, ['x']);
+		assert.deepEqual(r, { bond: 'x', amount: 15 }); // str3 -> 15 MP; MP apply skipped (no FU), no throw
+	});
+});
+
+// BUG 3 — cleanse the FU affliction set + our custom 'affliction', not only 'affliction'.
+test('qualifyingCleanseStatuses reads the FU affliction set (v0.2.2)', () => {
+	assert.ok(FU_AFFLICTION_STATUSES.includes('weak'));
+	assert.ok(CLEANSABLE_STATUSES.includes('affliction'));
+	assert.deepEqual(qualifyingCleanseStatuses(stubActor({ statuses: ['weak', 'ko'] })), ['weak']); // 'ko' not cleansable
+});
+
+test('cleanseWithBond removes a single active FU status and spends one budget (v0.2.2)', async () => {
+	await withGame(async () => {
+		const actor = stubActor({ strength: 2, statuses: ['weak'] });
+		const r = await cleanseWithBond(actor, 'x');
+		assert.equal(r, 'cleansed');
+		assert.deepEqual(actor.removed, ['weak']);
+		assert.equal(actor.getFlag().cleanse.x, 1); // budget spent only on success
+	});
+});
+
+test('cleanseWithBond returns noop with no qualifying status (v0.2.2)', async () => {
+	await withGame(async () => {
+		const actor = stubActor({ strength: 2, statuses: [] });
+		assert.equal(await cleanseWithBond(actor, 'x'), 'noop');
+		assert.equal(actor.getFlag().cleanse.x ?? 0, 0); // nothing spent
+	});
+});
+
+test('cleanseWithBond returns ambiguous with several statuses and spends nothing (v0.2.2)', async () => {
+	await withGame(async () => {
+		const actor = stubActor({ strength: 3, statuses: ['weak', 'slow', 'poisoned'] });
+		assert.equal(await cleanseWithBond(actor, 'x'), 'ambiguous');
+		assert.deepEqual(actor.removed, []);
+		assert.equal(actor.getFlag().cleanse.x ?? 0, 0);
+		// caller re-calls with the picked status:
+		assert.equal(await cleanseWithBond(actor, 'x', { statusId: 'slow' }), 'cleansed');
+		assert.deepEqual(actor.removed, ['slow']);
+	});
 });
