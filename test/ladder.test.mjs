@@ -15,6 +15,7 @@ import {
 	DIE_LADDER,
 	planSolidifyAtRest,
 	canInterludeFill,
+	cleanseWithBond,
 } from '../scripts/rippers-deeper-bonds.mjs';
 
 /* -------- ladder gating -------- */
@@ -97,4 +98,16 @@ test('planSolidifyAtRest: selected-but-over-cap fleeting are erased too', () => 
 test('canInterludeFill: once between rests', () => {
 	assert.equal(canInterludeFill(false), true);
 	assert.equal(canInterludeFill(true), false);
+});
+
+/* -------- ladder-effect API resolves (regression: AFFLICTION_STATUS must be defined) -------- */
+
+test('cleanseWithBond resolves instead of throwing on its status constant (v0.2.1 regression)', async () => {
+	// v0.2.0 shipped with AFFLICTION_STATUS/REGENERATION_STATUS referenced but never declared, so the
+	// (now wired) Cleanse button would throw ReferenceError on click. This asserts the constant exists.
+	globalThis.game = { user: { isActiveGM: true }, modules: { get: () => null }, actors: { getName: () => null } };
+	globalThis.ui = { notifications: { info: () => {}, warn: () => {} } };
+	const actor = { name: 'x', system: { bonds: [{ name: 'x', strength: 3 }] }, effects: [], getFlag: () => ({ cleanse: {} }), setFlag: async () => {} };
+	const r = await cleanseWithBond(actor, 'x');
+	assert.equal(r, 'noop'); // no conditions module + no matching effect -> noop, not a throw
 });

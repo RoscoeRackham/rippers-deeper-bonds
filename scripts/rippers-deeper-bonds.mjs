@@ -341,6 +341,11 @@ export async function fillClock(actor, name, sections = 1) {
 
 const LIMITS_FLAG = 'limits';
 const CONDITIONS_ID = 'rippers-conditions';
+// Status ids the rippers-conditions API keys on (its exported AFFLICTION_STATUS/REGENERATION_STATUS).
+// Defined here so cleanseWithBond's default param + status routing resolve at runtime.
+const AFFLICTION_STATUS = 'affliction';
+const REGENERATION_STATUS = 'regeneration';
+const ATTR_KEYS = Object.freeze(['dex', 'ins', 'mig', 'wlp']);
 
 function getLimits(actor) {
 	return actor?.getFlag?.(MODULE_ID, LIMITS_FLAG) ?? { cleanse: {}, dieUpScene: false };
@@ -540,6 +545,116 @@ function mkButton(label, title, { disabled = false, onClick, className } = {}) {
 	return b;
 }
 
+/** Light GM feedback for a ladder-effect result string. */
+function notifyResult(map, result) {
+	const msg = map[result];
+	if (!msg) return;
+	const kind = result === 'cleansed' || result === 'raised' ? 'info' : 'warn';
+	globalThis.ui?.notifications?.[kind]?.(msg);
+}
+
+/**
+ * Add the strength-ladder action buttons (Cleanse / Cover-Regen / Raise Die / Grant Skill) to a bond's
+ * control bar. Each appears only when the bond qualifies; disabled + reason-tooltip when spent this
+ * rest/scene (mirrors the Solidify pattern). GM-only; the API functions themselves re-check permissions.
+ */
+function addLadderButtons(bar, actor, rec) {
+	const strength = bondStrength(actor, rec.name);
+	const abilities = ladderAbilities(strength, rec.tier);
+	const limits = getLimits(actor);
+
+	// Str≥2 — Cleanse one status off the bonded character (an action; strength× per rest).
+	if (abilities.cleanse) {
+		const uses = cleanseUsesPerRest(strength);
+		const used = Number(limits.cleanse?.[rec.name]) || 0;
+		const ok = canCleanse(strength, used);
+		bar.appendChild(
+			mkButton('Cleanse', ok ? `Cleanse one status off ${rec.name} — ${uses - used} of ${uses} left this rest` : `No cleanses left until rest (${used}/${uses} used)`, {
+				className: 'rdb-btn--ladder',
+				disabled: !ok,
+				onClick: async () => {
+					const r = await cleanseWithBond(actor, rec.name);
+					notifyResult({ cleansed: `Cleansed a status via ${rec.name}.`, exhausted: 'No cleanses left until the next rest.', 'too-weak': 'Bond is too weak to cleanse (needs strength 2).', noop: 'No status to cleanse.' }, r);
+				},
+			}),
+		);
+	}
+
+	// Str≥2 — Cover-Regen: one qualifying bond regens strength×5 MP both ways.
+	if (abilities.coverRegen) {
+		bar.appendChild(
+			mkButton('Cover-Regen', `Cover-regen: ${abilities.coverRegenMp} MP to both (strength × 5)`, {
+				className: 'rdb-btn--ladder',
+				onClick: async () => {
+					const r = await coverRegen(actor, [rec.name]);
+					globalThis.ui?.notifications?.info?.(r ? `${rec.name}: cover-regen ${r.amount} MP.` : 'Cover-regen did not apply.');
+				},
+			}),
+		);
+	}
+
+	// Str≥3 — Raise one Attribute die a size for the scene (once per scene). Pick the attribute.
+	if (abilities.attrDieUp) {
+		const spent = !canRaiseDieThisScene(limits.dieUpScene);
+		bar.appendChild(
+			mkButton('Raise Die', spent ? 'Already raised a die this scene' : 'Raise one attribute die a size for the scene (once/scene)', {
+				className: 'rdb-btn--ladder',
+				disabled: spent,
+				onClick: async () => {
+					const attr = await pickAttribute(actor);
+					if (!attr) return;
+					const r = await raiseAttributeDie(actor, rec.name, attr);
+					notifyResult({ raised: `Raised ${attr.toUpperCase()} a size for the scene.`, 'used-this-scene': 'Already raised a die this scene.', 'too-weak': 'Bond is too weak (needs strength 3).', noop: 'Could not raise that die (already at d12?).' }, r);
+				},
+			}),
+		);
+	}
+
+	// Eternal (str4) — grant one of their skills at SL1 (GM records the chosen skill).
+	if (abilities.skillGrant) {
+		const granted = rec.grantedSkill?.skillName;
+		bar.appendChild(
+			mkButton('Grant Skill', granted ? `Granted skill: ${granted} (click to change)` : `Record one of ${rec.name}'s skills as granted at SL1`, {
+				className: 'rdb-btn--ladder',
+				onClick: async () => {
+					const skillName = await pickSkillName(actor, rec);
+					if (skillName == null) return;
+					const ok = await setEternalSkillGrant(actor, rec.name, { skillName });
+					globalThis.ui?.notifications?.[ok ? 'info' : 'warn']?.(ok ? `Recorded granted skill: ${skillName || '(cleared)'}.` : 'Could not record the granted skill.');
+				},
+			}),
+		);
+	}
+}
+
+/** Small GM picker: which attribute die to raise. Resolves to 'dex'|'ins'|'mig'|'wlp' or null. */
+async function pickAttribute(actor) {
+	const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+	if (!DialogV2) return null;
+	const buttons = ATTR_KEYS.map((a) => ({
+		action: a,
+		label: `${a.toUpperCase()} (${actor?.system?.attributes?.[a]?.current ?? '?'})`,
+		callback: () => a,
+	}));
+	buttons.push({ action: 'cancel', label: 'Cancel', callback: () => null });
+	return DialogV2.wait({ window: { title: 'Raise which attribute die?' }, content: '<p>Raise one attribute die a size for the scene.</p>', buttons });
+}
+
+/** Small GM prompt: name one of the bonded character's skills to grant at SL1. Resolves to string or null. */
+async function pickSkillName(actor, rec) {
+	const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+	if (!DialogV2) return null;
+	const current = rec?.grantedSkill?.skillName ?? '';
+	return DialogV2.wait({
+		window: { title: `Grant a skill from ${rec.name}` },
+		content: `<form><p>Name one of ${rec.name}'s skills to grant at SL1 (leave blank to clear).</p><input type="text" name="skill" value="${current}" placeholder="Skill name" style="width:100%"/></form>`,
+		buttons: [
+			{ action: 'ok', label: 'Record', default: true, callback: (_ev, button) => button.form.querySelector('input[name="skill"]').value.trim() },
+			{ action: 'cancel', label: 'Cancel', callback: () => null },
+		],
+	});
+}
+
 /**
  * Inject the tier gradient, a 4-section clock, and GM tier-CRUD controls onto each bond row, plus a
  * section-level "new fleeting bond" control. Reuses the existing API — no new mechanics. Defensive
@@ -584,17 +699,20 @@ function injectBondControls(app) {
 		const records = getRecords(actor);
 		rows.forEach(({ el: row, index }) => {
 			const rec = index == null ? null : records[index];
-			if (!rec || row.querySelector?.('.rdb-controls')) return; // idempotent per row
-			row.classList?.add?.(TIER_CLASS[rec.tier] ?? '');
+			// idempotent per row: our bar is a SIBLING after the FU row, not a child of it
+			if (!rec || row.nextElementSibling?.classList?.contains?.('rdb-bar')) return;
+			row.classList?.add?.(TIER_CLASS[rec.tier] ?? ''); // left-edge accent stays on the FU row
 
-			const controls = document.createElement('span');
-			controls.className = 'rdb-controls';
+			// A full-width horizontal control BAR beneath the bond's FU row (flex-wrap, no overflow).
+			// It is a SIBLING appended after the row — never a child squeezed into FU's flexrow.
+			const bar = document.createElement('div');
+			bar.className = 'rdb-bar';
 
-			// tier indicator (always visible)
+			// tier indicator (always visible, at the left of the bar)
 			const tag = document.createElement('span');
 			tag.className = `rdb-tier-tag ${TIER_CLASS[rec.tier] ?? ''}`;
 			tag.textContent = TIER_LABEL[rec.tier] ?? rec.tier;
-			controls.appendChild(tag);
+			bar.appendChild(tag);
 
 			// clock for solid bonds (click to fill, GM)
 			if (rec.tier === TIER.SOLID) {
@@ -606,14 +724,14 @@ function injectBondControls(app) {
 					clock.classList.add('rdb-clock--clickable'); // class-driven pointer/hover (CSS tail)
 					clock.addEventListener('click', () => fillClock(actor, rec.name, 1));
 				}
-				controls.appendChild(clock);
+				bar.appendChild(clock);
 			}
 
-			// GM tier-CRUD buttons
+			// GM tier-CRUD + strength-ladder buttons
 			if (isGM) {
 				const sol = solidifyButtonState(rec, records);
 				if (sol.show) {
-					controls.appendChild(
+					bar.appendChild(
 						mkButton('Solidify', sol.disabled ? sol.reason : 'Make this bond solid (adds a Bond Clock)', {
 							disabled: sol.disabled,
 							onClick: () => solidifyBond(actor, rec.name),
@@ -621,16 +739,17 @@ function injectBondControls(app) {
 					);
 				}
 				if (rec.tier === TIER.SOLID) {
-					controls.appendChild(mkButton('→ Eternal', 'Promote to an eternal bond (off the six-cap, side-quest gated)', { onClick: () => promoteEternal(actor, rec.name) }));
+					bar.appendChild(mkButton('→ Eternal', 'Promote to an eternal bond (off the six-cap, side-quest gated)', { onClick: () => promoteEternal(actor, rec.name) }));
 					// clock-fill trigger buttons (each fills one section) — for triggers FU can't auto-detect
-					controls.appendChild(mkButton('◷ Opp', 'Fill a clock section — opportunity', { className: 'rdb-btn--tick', onClick: () => fillClock(actor, rec.name, 1) }));
-					controls.appendChild(mkButton('◷ Interlude', 'Fill a clock section — interlude (once between rests)', { className: 'rdb-btn--tick', onClick: () => fillClock(actor, rec.name, 1) }));
-					controls.appendChild(mkButton('◷ NPC', 'Fill a clock section — NPC first appearance this session', { className: 'rdb-btn--tick', onClick: () => fillClock(actor, rec.name, 1) }));
-					controls.appendChild(mkButton('◷ Villain FP', 'Fill a clock section — a Fabula Point from this Villain’s appearance', { className: 'rdb-btn--tick', onClick: () => fillClock(actor, rec.name, 1) }));
+					bar.appendChild(mkButton('◷ Opp', 'Fill a clock section — opportunity', { className: 'rdb-btn--tick', onClick: () => fillClock(actor, rec.name, 1) }));
+					bar.appendChild(mkButton('◷ Interlude', 'Fill a clock section — interlude (once between rests)', { className: 'rdb-btn--tick', onClick: () => fillClock(actor, rec.name, 1) }));
+					bar.appendChild(mkButton('◷ NPC', 'Fill a clock section — NPC first appearance this session', { className: 'rdb-btn--tick', onClick: () => fillClock(actor, rec.name, 1) }));
+					bar.appendChild(mkButton('◷ Villain FP', 'Fill a clock section — a Fabula Point from this Villain’s appearance', { className: 'rdb-btn--tick', onClick: () => fillClock(actor, rec.name, 1) }));
 				}
+				addLadderButtons(bar, actor, rec);
 			}
 
-			row.appendChild?.(controls);
+			row.insertAdjacentElement?.('afterend', bar); // sibling bar, full panel width
 		});
 
 		// section-level controls (GM), appended once inside the bonds fieldset

@@ -14,8 +14,15 @@
 .rdb-tier-solid    { box-shadow: inset 3px 0 0 0 var(--rdb-solid); }
 .rdb-tier-eternal  { box-shadow: inset 3px 0 0 0 var(--rdb-eternal); }
 
-/* Controls cluster */
-.rdb-controls { display: inline-flex; align-items: center; gap: 0.4em; margin-left: 0.5em; flex-wrap: wrap; }
+/* Controls bar — a full-width horizontal strip BENEATH each bond's FU row (a sibling, not a child
+   squeezed into FU's flexrow). flex-wrap keeps it inside the panel at the sheet's default width;
+   nothing is pinned or absolute, so it can never clip past the border (the v0.2.0 bug). */
+.rdb-bar {
+	display: flex; flex-wrap: wrap; align-items: center; gap: 0.4em;
+	width: 100%; box-sizing: border-box;
+	margin: 0.15em 0 0.5em; padding: 0.3em 0.5em 0.35em;
+}
+.rdb-controls { display: flex; align-items: center; gap: 0.4em; flex-wrap: wrap; } /* legacy alias */
 
 /* Tier tag: a filled pill that actually encodes the tier and stays legible at sheet scale.
    The tag also carries .rdb-tier-{tier}; these rules cancel the row's inset bar on the tag. */
@@ -37,7 +44,8 @@
 	margin-left: 0.2em; letter-spacing: 2px; font-size: 0.95rem; line-height: 1;
 	color: #ff5a6a; opacity: 1;
 }
-.rdb-clock:hover { filter: brightness(1.2); } /* GM sets inline cursor:pointer; give a hover cue */
+.rdb-clock:hover { filter: brightness(1.2); } /* hover cue for the clickable (GM) clock */
+.rdb-clock--clickable { cursor: pointer; } /* class-driven pointer for the GM's click-to-fill clock */
 
 /* Buttons: give real vertical padding + a min hit box (was 0 vertical padding → sub-legible target). */
 .rdb-btn {
@@ -47,17 +55,15 @@
 	border-radius: 3px; cursor: pointer;
 }
 .rdb-btn.rdb-disabled, .rdb-btn:disabled { opacity: 0.6; cursor: not-allowed; } /* was .45 — reason lives in title tooltip; keep the label legible */
+.rdb-btn--tick { opacity: 0.82; } /* quieter secondary clock-fill group */
+/* Strength-ladder actions — a filled blood accent marks them as the ability group (str2 cleanse/cover,
+   str3 raise die, str4 grant skill), distinct from the tier-CRUD + clock-fill buttons. */
+.rdb-btn--ladder {
+	border: 1px solid var(--rdb-solid);
+	background: rgba(200, 16, 42, 0.14);
+	color: #ff5a6a;
+}
 
 /* Section-level controls, appended once to the fieldset. */
 .rdb-new-bond { margin-top: 0.4em; }
 .rdb-solidify-rest { margin-top: 0.4em; margin-left: 0.4em; }
-
-/* SUGGESTED CLASS HOOKS for Artificer (structure is yours; these are optional, non-breaking):
-   1. Add `rdb-btn--tick` to the four ◷ clock-fill buttons (Opp/Interlude/NPC/Villain FP) so the
-      near-identical cluster reads as a quieter secondary group, distinct from Solidify / →Eternal.
-   2. Add `rdb-clock--clickable` to the clock span when isGM, instead of the inline cursor style,
-      so the pointer + hover affordance is class-driven.
-   Ready-made rules (inert until the classes exist):
-      .rdb-btn--tick { opacity: 0.82; }
-      .rdb-clock--clickable { cursor: pointer; }
-*/
