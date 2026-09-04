@@ -498,13 +498,18 @@ export async function sharedResolve(actor, name) {
 	if (amount <= 0) return 'too-weak';
 	const limits = getLimits(actor);
 	if (limits.sharedResolveScene) return 'used-this-scene';
+	// v0.2.4 (Austin): DUAL-TARGET — recover MP to BOTH the holder AND the bonded party member (the bond is
+	// with a present ally). Falls back to holder-only when the bonded name isn't a world actor.
+	const other = globalThis.game?.actors?.getName?.(name) ?? null;
 	const fu = await getFuPipelines();
 	if (fu) {
-		try {
-			const req = new fu.ResourceRequest(fu.InlineSourceInfo.fromInstance(actor), [actor], 'mp', amount, false);
-			await fu.ResourcePipeline.processRecovery(req);
-		} catch (err) {
-			console.warn(`${MODULE_ID} | shared-resolve MP apply failed`, err);
+		for (const who of [actor, other].filter(Boolean)) {
+			try {
+				const req = new fu.ResourceRequest(fu.InlineSourceInfo.fromInstance(who), [who], 'mp', amount, false);
+				await fu.ResourcePipeline.processRecovery(req);
+			} catch (err) {
+				console.warn(`${MODULE_ID} | shared-resolve MP apply failed`, err);
+			}
 		}
 	}
 	await setLimits(actor, { ...limits, sharedResolveScene: true });
