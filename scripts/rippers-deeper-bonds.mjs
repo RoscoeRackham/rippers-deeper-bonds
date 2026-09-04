@@ -97,8 +97,10 @@ export function fillBondClock({ clock = 0, emotions = 0, bonus = 0 } = {}, secti
  * ============================================================ */
 
 /** A per-bond Deeper record (the flag payload). Strength/emotions live on the FU bond; this is tier+clock. */
-export function makeRecord(name, tier = TIER.FLEETING, clock = 0) {
-	return { name: name ?? '', tier, clock: Math.max(0, Math.min(CLOCK_SECTIONS, Number(clock) || 0)) };
+export function makeRecord(name, tier = TIER.FLEETING, clock = 0, partyMember = false) {
+	// v0.2.3: `partyMember` (Austin ruling) — bonds to a present PARTY member gate the support actions
+	// (Status-recover + Shared Resolve). The die-size increase is emotional and NOT gated on this.
+	return { name: name ?? '', tier, clock: Math.max(0, Math.min(CLOCK_SECTIONS, Number(clock) || 0)), partyMember: !!partyMember };
 }
 
 export function isSolid(record) {
@@ -128,7 +130,7 @@ export function reconcileRecords(records = [], bonds = []) {
 		if (idx === -1 && records[i] && !used.has(i)) idx = i; // rename: same slot, new name
 		if (idx !== -1) {
 			used.add(idx);
-			return makeRecord(bond.name, records[idx].tier, records[idx].clock);
+			return makeRecord(bond.name, records[idx].tier, records[idx].clock, records[idx].partyMember);
 		}
 		return makeRecord(bond.name, TIER.FLEETING, 0);
 	});
@@ -278,6 +280,22 @@ export function recordFor(actor, name, index) {
 	const records = getRecords(actor);
 	if (Number.isInteger(index) && records[index]?.name === name) return records[index];
 	return records.find((r) => r.name === name) ?? null;
+}
+
+/** Is this bond flagged a present PARTY member? (gates the support actions.) */
+export function isPartyMemberBond(actor, name) {
+	return !!recordFor(actor, name)?.partyMember;
+}
+/** Set/clear a bond's party-member flag. Owner-writable (a classification the player/GM sets on their own
+ *  actor) — NOT GM-authoritative like tier/clock progression. Persists in the Deeper record. */
+export async function setBondPartyMember(actor, name, isParty) {
+	if (!actor || !name) return false;
+	const records = getRecords(actor);
+	const rec = records.find((r) => r.name === name);
+	if (!rec) return false;
+	rec.partyMember = !!isParty;
+	await setRecords(actor, records);
+	return true;
 }
 
 /* -------- bond CRUD (GM-authoritative, tiered caps) -------- */
@@ -440,6 +458,7 @@ async function removeStatus(actor, statusId) {
  */
 export async function cleanseWithBond(actor, name, { statusId = null } = {}) {
 	if (!isActiveGM() || !actor) return 'noop';
+	if (!isPartyMemberBond(actor, name)) return 'not-party'; // v0.2.3: status-recover is party-member-only (Austin)
 	const strength = bondStrength(actor, name);
 	if (strength < 2) return 'too-weak';
 	const limits = getLimits(actor);
@@ -468,25 +487,28 @@ export async function cleanseWithBond(actor, name, { statusId = null } = {}) {
  * @param {object} actor  the covering character
  * @param {string[]} candidateNames  bonds that qualify on this cover
  */
-export async function coverRegen(actor, candidateNames = []) {
-	if (!isActiveGM() || !actor) return null;
-	const candidates = candidateNames.map((n) => ({ name: n, strength: bondStrength(actor, n) }));
-	const chosen = pickCoverRegenBond(candidates);
-	if (!chosen) return null;
-	const amount = coverRegenAmount(chosen.strength);
-	const other = globalThis.game?.actors?.getName?.(chosen.name) ?? null;
+// v0.2.3 — SHARED RESOLVE (was cover-regen; Austin ruling). Per-bond, PARTY-MEMBER only, once per SCENE.
+// The HOLDER recovers (strength×5) MP by drawing on the bond — no Cover interaction, no bonded-actor leg
+// (works for a present party member without needing to target them). Returns {bond,amount} on success,
+// else a reason string ('not-party' | 'too-weak' | 'used-this-scene' | 'noop').
+export async function sharedResolve(actor, name) {
+	if (!isActiveGM() || !actor || !name) return 'noop';
+	if (!isPartyMemberBond(actor, name)) return 'not-party';
+	const amount = coverRegenAmount(bondStrength(actor, name)); // strength×5 at str2+, else 0
+	if (amount <= 0) return 'too-weak';
+	const limits = getLimits(actor);
+	if (limits.sharedResolveScene) return 'used-this-scene';
 	const fu = await getFuPipelines();
 	if (fu) {
-		for (const who of [actor, other].filter(Boolean)) {
-			try {
-				const req = new fu.ResourceRequest(fu.InlineSourceInfo.fromInstance(who), [who], 'mp', amount, false);
-				await fu.ResourcePipeline.processRecovery(req);
-			} catch (err) {
-				console.warn(`${MODULE_ID} | cover-regen MP apply failed`, err);
-			}
+		try {
+			const req = new fu.ResourceRequest(fu.InlineSourceInfo.fromInstance(actor), [actor], 'mp', amount, false);
+			await fu.ResourcePipeline.processRecovery(req);
+		} catch (err) {
+			console.warn(`${MODULE_ID} | shared-resolve MP apply failed`, err);
 		}
 	}
-	return { bond: chosen.name, amount };
+	await setLimits(actor, { ...limits, sharedResolveScene: true });
+	return { bond: name, amount };
 }
 
 /**
@@ -552,7 +574,7 @@ async function onSceneEnd(actor) {
 			console.warn(`${MODULE_ID} | die-up revert failed`, err);
 		}
 	}
-	if (limits.dieUpScene || limits.dieUp) await setLimits(actor, { ...limits, dieUpScene: false, dieUp: null });
+	if (limits.dieUpScene || limits.dieUp || limits.sharedResolveScene) await setLimits(actor, { ...limits, dieUpScene: false, dieUp: null, sharedResolveScene: false });
 }
 
 /* -------- invoke: piggyback FU check-push -------- */
@@ -866,7 +888,9 @@ export function getModuleApi() {
 		bondStrength,
 		ladderAbilities,
 		cleanseWithBond,
-		coverRegen,
+		sharedResolve,             // v0.2.3 (was coverRegen)
+		isPartyMemberBond,
+		setBondPartyMember,        // v0.2.3 party-member toggle (owner-writable)
 		raiseAttributeDie,
 		setEternalSkillGrant,
 		solidifyAtRest,

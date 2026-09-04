@@ -16,24 +16,29 @@ import {
 	planSolidifyAtRest,
 	canInterludeFill,
 	cleanseWithBond,
-	coverRegen,
+	sharedResolve,
+	isPartyMemberBond,
+	setBondPartyMember,
 	qualifyingCleanseStatuses,
 	FU_AFFLICTION_STATUSES,
 	CLEANSABLE_STATUSES,
 } from '../scripts/rippers-deeper-bonds.mjs';
 
 /** Minimal FU-ish actor stub. statuses is a Set; toggleStatusEffect records removals. */
-function stubActor({ strength = 3, statuses = [], attrs = { dex: 8, ins: 8, mig: 8, wlp: 8 }, limits = { cleanse: {}, dieUpScene: false } } = {}) {
+function stubActor({ strength = 3, statuses = [], attrs = { dex: 8, ins: 8, mig: 8, wlp: 8 }, limits = { cleanse: {}, dieUpScene: false }, partyMember = true } = {}) {
 	const removed = [];
 	const flag = { ...limits };
+	// v0.2.3: the bonds flag now carries per-bond records incl. partyMember. getFlag is key-sensitive:
+	// 'bonds' → the record array, anything else (limits) → the mutable limits object.
+	let bondRecords = [{ name: 'x', tier: 'fleeting', clock: 0, partyMember }];
 	return {
 		removed,
 		name: 'x',
 		system: { bonds: [{ name: 'x', strength }], attributes: Object.fromEntries(Object.entries(attrs).map(([k, v]) => [k, { base: v }])) },
 		statuses: new Set(statuses),
 		effects: [],
-		getFlag: () => flag,
-		setFlag: async (_m, _k, v) => Object.assign(flag, v),
+		getFlag: (_m, k) => (k === 'bonds' ? bondRecords : flag),
+		setFlag: async (_m, k, v) => { if (k === 'bonds') bondRecords = v; else Object.assign(flag, v); },
 		update: async () => {},
 		toggleStatusEffect: async (id) => { removed.push(id); return true; },
 	};
@@ -137,14 +142,32 @@ test('raiseDie handles numeric base dice: 8->10, 12->noop (v0.2.2)', () => {
 	assert.equal(raiseDie('d8'), 'd10'); // string form still works
 });
 
-// BUG 1 — coverRegen used getFuPipelines() which was undefined -> ReferenceError. Must resolve when FU is
-// unavailable (dynamic import fails in node): the detector returns null and coverRegen still resolves.
-test('coverRegen resolves (no ReferenceError) when FU pipelines are unavailable (v0.2.2)', async () => {
+// v0.2.3 — SHARED RESOLVE (was coverRegen): per-bond, party-member only, once per scene, holder MP recovery.
+// Resolves (no ReferenceError) when FU pipelines are unavailable (dynamic import fails in node).
+test('sharedResolve: party bond str3 recovers 15 MP to the holder; second use this scene is refused', async () => {
 	await withGame(async () => {
-		const actor = stubActor({ strength: 3 });
-		const r = await coverRegen(actor, ['x']);
-		assert.deepEqual(r, { bond: 'x', amount: 15 }); // str3 -> 15 MP; MP apply skipped (no FU), no throw
+		const actor = stubActor({ strength: 3, partyMember: true });
+		const r = await sharedResolve(actor, 'x');
+		assert.deepEqual(r, { bond: 'x', amount: 15 });          // str3 -> 15 MP; MP apply skipped (no FU), no throw
+		const again = await sharedResolve(actor, 'x');
+		assert.equal(again, 'used-this-scene');                  // once per scene
 	});
+});
+
+test('sharedResolve + cleanseWithBond are gated to PARTY-MEMBER bonds (v0.2.3 Austin ruling)', async () => {
+	await withGame(async () => {
+		const npc = stubActor({ strength: 3, partyMember: false, statuses: ['weak'] });
+		assert.equal(await sharedResolve(npc, 'x'), 'not-party');
+		assert.equal(await cleanseWithBond(npc, 'x'), 'not-party'); // status-recover hidden/refused for non-party bonds
+	});
+});
+
+test('setBondPartyMember toggles the flag; isPartyMemberBond reads it', async () => {
+	const actor = stubActor({ partyMember: false });
+	assert.equal(isPartyMemberBond(actor, 'x'), false);
+	assert.equal(await setBondPartyMember(actor, 'x', true), true);
+	assert.equal(isPartyMemberBond(actor, 'x'), true);
+	assert.equal(await setBondPartyMember(actor, 'nope', true), false); // unknown bond
 });
 
 // BUG 3 — cleanse the FU affliction set + our custom 'affliction', not only 'affliction'.
