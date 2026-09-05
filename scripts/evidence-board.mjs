@@ -12,9 +12,10 @@
  *  - Context verb by axis state: positive → Deepen · hostile → Reconcile · neutral → Invoke;
  *    mixed poles is UNRULED → Invoke + owed chip. Invoke wires to the shipped invoke arm; Deepen
  *    wires to the shipped GM clock-advance; RECONCILE HAS NO MECHANIC YET → disabled + ⚠ owed.
- *  - Focus-hop (selected bond's own strings, one hop out, dimmed): the PERMISSION rule is unruled —
- *    the hop renders for the GM only (who already reads every sheet; no new information) and the
- *    ⚠ owed chip is shown for the player rule. Never a guess.
+ *  - Focus-hop: RULED (Austin, 5 Sep 2026: "Yes.") — any viewer, player or GM, may re-center the
+ *    board on a bond's matched actor. Navigation only, never a permission change: the hopped-to
+ *    board is built under the SAME visibility rules (sealed cards stay sealed to non-GMs, canSeal
+ *    recomputes from the hopped-to actor's ownership).
  *  - Name→actor portrait resolution: bonds are free-text names; exact case-insensitive actor-name
  *    match gets the portrait, anything else gets the studio-imprint placeholder (display-only).
  *
@@ -97,7 +98,7 @@ export function matchActorByName(name, actors) {
 
 /**
  * The board VM. `bonds` = actor.system.bonds; `records` = the deeper flag records (tier/clock/secret,
- * index-aligned); `actors` = candidates for portrait match; isGM gates the sealed treatment + hop.
+ * index-aligned); `actors` = candidates for portrait match; isGM gates the sealed treatment.
  */
 export function buildBoardVM(owner, bonds, records, actors, { isGM = false, isOwner = false, selectedIndex = null } = {}) {
 	const layout = boardLayout(bonds.length);
@@ -117,6 +118,8 @@ export function buildBoardVM(owner, bonds, records, actors, { isGM = false, isOw
 			clock: Number(rec.clock) || 0, clockMax: CLOCK_SECTIONS,
 			axes: EB_AXES.map((a) => { const v = axisValue(b, a[0]); return { key: a[0], neg: a[1], pos: a[2], glyph: a[3], value: v, isPos: v === 1, isNeg: v === -1 }; }),
 			verb, selected: selectedIndex === i,
+			// focus-hop target: only an unsealed plate with a resolved actor can be hopped to
+			hopTarget: !sealed && match ? match.id : null,
 			string: stringGeometry(layout.owner, spot, b),
 			stringSealed: sealed, stringEternal: (rec.tier ?? '') === TIER.ETERNAL,
 		};
@@ -127,7 +130,8 @@ export function buildBoardVM(owner, bonds, records, actors, { isGM = false, isOw
 		w: layout.w, h: layout.h, plates, selectable, isGM,
 		selected: plates.find((p) => p.selected) ?? null,
 		canSeal: isGM || isOwner, // the wax seal is owner/GM-set (trackers.designed.html precedent)
-		hopAllowed: isGM, // permission rule ⚠ owed — GM-only until Austin rules (no new info for a GM)
+		canAct: isGM || isOwner, // verbs run only for GM/owner — a hop is navigation, never new agency
+		hopAllowed: true, // Austin ruled (5 Sep 2026): players may focus-hop — navigation, not permission
 	};
 }
 
@@ -153,11 +157,13 @@ export function openEvidenceBoard(actor) {
 		};
 		static PARTS = { board: { template: `modules/${MODULE_ID}/templates/evidence-board.hbs` } };
 		_selected = null;
+		_focus = actor; // focus-hop re-centers here (Austin ruled: players may hop — navigation only)
 		async _prepareContext() {
-			const bonds = actor.system?.bonds ?? [];
-			const records = getRecords(actor);
+			const focus = this._focus;
+			const bonds = focus.system?.bonds ?? [];
+			const records = getRecords(focus);
 			const actors = globalThis.game?.actors?.filter?.((a) => a.type === 'character') ?? [];
-			return { vm: buildBoardVM(actor, bonds, records, actors, { isGM: !!globalThis.game?.user?.isGM, isOwner: !!actor.isOwner, selectedIndex: this._selected }) };
+			return { vm: buildBoardVM(focus, bonds, records, actors, { isGM: !!globalThis.game?.user?.isGM, isOwner: !!focus.isOwner, selectedIndex: this._selected }) };
 		}
 		_onRender() {
 			const root = this.element;
@@ -168,6 +174,15 @@ export function openEvidenceBoard(actor) {
 				});
 			});
 			root.querySelector('[data-verb-btn]')?.addEventListener('click', () => this.#runVerb());
+			// focus-hop (Austin ruled: any viewer): re-center on the selected bond's matched actor
+			root.querySelector('[data-hop]')?.addEventListener('click', () => {
+				const id = root.querySelector('[data-hop]')?.dataset.hop;
+				const target = globalThis.game?.actors?.get?.(id);
+				if (!target) return;
+				this._focus = target;
+				this._selected = null;
+				this.render();
+			});
 			this.#keys = (ev) => {
 				if (ev.key === 'Escape') { this._selected = null; this.render(); }
 				if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
@@ -182,10 +197,11 @@ export function openEvidenceBoard(actor) {
 			// GM/owner: wax-seal toggle on the selected plate
 			root.querySelector('[data-seal-toggle]')?.addEventListener('click', async () => {
 				const i = this._selected; if (i == null) return;
-				const records = getRecords(actor);
+				const focus = this._focus;
+				const records = getRecords(focus);
 				if (!records[i]) return;
 				records[i] = { ...records[i], [SECRET_FLAG_KEY]: !records[i][SECRET_FLAG_KEY] };
-				await actor.setFlag(MODULE_ID, 'bonds', records);
+				await focus.setFlag(MODULE_ID, 'bonds', records);
 				this.render();
 			});
 		}
@@ -193,12 +209,14 @@ export function openEvidenceBoard(actor) {
 		async close(opts) { if (this.#keys) globalThis.removeEventListener('keydown', this.#keys); return super.close(opts); }
 		async #runVerb() {
 			const i = this._selected; if (i == null) return;
-			const bond = (actor.system?.bonds ?? [])[i]; if (!bond) return;
+			const focus = this._focus;
+			if (!(globalThis.game?.user?.isGM || focus.isOwner)) return; // hop grants sight, never agency
+			const bond = (focus.system?.bonds ?? [])[i]; if (!bond) return;
 			const v = boardVerb(bond);
 			const modApi = globalThis.game?.modules?.get?.(MODULE_ID)?.api;
 			// Only shipped arms — reconcile stays disabled (⚠ owed), nothing invented.
-			if (v.verb === 'invoke') await modApi?.onBondInvoked?.(actor, bond.name, {});
-			else if (v.verb === 'deepen' && globalThis.game?.user?.isGM) await modApi?.fillClock?.(actor, bond.name, 1);
+			if (v.verb === 'invoke') await modApi?.onBondInvoked?.(focus, bond.name, {});
+			else if (v.verb === 'deepen' && globalThis.game?.user?.isGM) await modApi?.fillClock?.(focus, bond.name, 1);
 			this.render();
 		}
 	}

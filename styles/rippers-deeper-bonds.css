@@ -135,10 +135,10 @@
 .rdb-tier-fleeting { background:transparent; color:var(--rt-bone-dim); border:1px solid var(--rt-border); }
 .rdb-secret-chip { background:var(--rt-raised); border:1px solid var(--eb-violet); color:var(--eb-violet-text);
 	font-weight:600; padding:0 5px; margin-right:4px; }
-.rdb-hop-note { position:absolute; left:24px; top:20px; width:200px; background:rgba(7,4,5,.92);
-	border:1px solid var(--rt-border); border-left:3px solid var(--eb-violet); padding:8px 10px; z-index:5; }
-.rdb-hop-label { display:block; font-family:var(--rt-mono); font-size:8.5px; font-weight:600; letter-spacing:.14em;
-	color:var(--eb-violet-text); text-transform:uppercase; margin-bottom:5px; }
+.rdb-hop-btn { display:block; margin-top:8px; width:auto; max-width:100%; overflow:hidden; text-overflow:ellipsis;
+	white-space:nowrap; font-family:var(--rt-mono); font-size:9px; font-weight:600; letter-spacing:.1em;
+	text-transform:uppercase; background:var(--rt-raised); border:1px solid var(--eb-violet);
+	color:var(--eb-violet-text); padding:3px 9px; cursor:pointer; }
 .rdb-owed { display:inline-flex; align-items:center; gap:4px; font-family:var(--rt-mono); font-size:8.5px;
 	font-weight:600; letter-spacing:.1em; color:var(--eb-gold); padding:1px 6px; white-space:nowrap; cursor:help;
 	border:1px dashed var(--eb-gold);

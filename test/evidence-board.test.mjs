@@ -63,7 +63,8 @@ test('buildBoardVM: sealed treatment for non-GM only; sealed plates unselectable
 	assert.equal(player.plates[0].sealed, true);
 	assert.equal(player.plates[0].selectable, false);
 	assert.deepEqual(player.selectable, [1]);
-	assert.equal(player.hopAllowed, false); // permission rule owed — no hop for players
+	assert.equal(player.hopAllowed, true); // Austin ruled 5 Sep 2026: players may focus-hop
+	assert.equal(player.canAct, false);    // but a hop is navigation — no verb agency without ownership
 	const gm = buildBoardVM({ name: 'Vin' }, bonds, records, [], { isGM: true });
 	assert.equal(gm.plates[0].sealed, false);   // GM sees the full bond
 	assert.equal(gm.plates[0].secret, true);    // but the secret chip still shows
@@ -104,4 +105,25 @@ test('VM axes rows carry pole flags for the flyout, strength matches the ladder'
 	assert.equal(p.axes[2].isNeg, true);
 	assert.equal(p.verb.verb, 'invoke'); // mixed
 	assert.match(p.verb.owed, /mixed/);
+});
+
+// ── focus-hop (Austin ruled 5 Sep 2026: players may re-center; navigation only) ──
+test('hopTarget: only an unsealed, actor-matched plate is hoppable; sealed and unmatched never are', () => {
+	const actors = [{ id: 'a1', name: 'Morrax', img: 'm.png' }];
+	const bonds = [bond({ name: 'Morrax' }), bond({ name: 'Morrax' }), bond({ name: 'Nobody Known' })];
+	const records = [core.makeRecord('Morrax'), core.makeRecord('Morrax', 'fleeting', 0, false, true), core.makeRecord('Nobody Known')];
+	const player = buildBoardVM({ name: 'Vin' }, bonds, records, actors, { isGM: false });
+	assert.equal(player.hopAllowed, true);
+	assert.equal(player.plates[0].hopTarget, 'a1');   // matched, unsealed → hoppable
+	assert.equal(player.plates[1].hopTarget, null);   // sealed to a player → no hop
+	assert.equal(player.plates[2].hopTarget, null);   // no actor match → nowhere to hop
+	const gm = buildBoardVM({ name: 'Vin' }, bonds, records, actors, { isGM: true });
+	assert.equal(gm.plates[1].hopTarget, 'a1');       // GM sees through the seal, may hop
+});
+
+test('canAct: verb agency stays GM/owner-only after a hop (navigation, not permission)', () => {
+	const b = [bond({ name: 'A' })]; const r = [core.makeRecord('A')];
+	assert.equal(buildBoardVM({ name: 'V' }, b, r, [], { isGM: false, isOwner: false }).canAct, false);
+	assert.equal(buildBoardVM({ name: 'V' }, b, r, [], { isGM: false, isOwner: true }).canAct, true);
+	assert.equal(buildBoardVM({ name: 'V' }, b, r, [], { isGM: true, isOwner: false }).canAct, true);
 });

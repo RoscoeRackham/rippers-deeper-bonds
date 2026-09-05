@@ -15,7 +15,6 @@
   "RDB.Board.Clock": "clock",
   "RDB.Board.FocusHop": "Focus hop",
   "RDB.Board.Owed": "Owed",
-  "RDB.Board.OwedHop": "Owed — focus-hop permission rule",
   "RDB.Board.OwedTip": "Unruled — owed to Austin; never a guess.",
   "RDB.Board.Seal": "Seal this bond",
   "RDB.Board.Unseal": "Break the seal",

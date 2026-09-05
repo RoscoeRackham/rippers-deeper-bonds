@@ -56,14 +56,6 @@
 			</div>
 		{{/each}}
 
-		{{!-- focus-hop note: permission ⚠ owed; hop renders GM-only until ruled --}}
-		{{#unless vm.hopAllowed}}
-			<div class="rdb-hop-note">
-				<span class="rdb-hop-label">{{localize 'RDB.Board.FocusHop'}}</span>
-				<span class="rdb-owed" title="{{localize 'RDB.Board.OwedTip'}}">⚠︎ {{localize 'RDB.Board.OwedHop'}}</span>
-			</div>
-		{{/unless}}
-
 		{{!-- detail flyout --}}
 		{{#with vm.selected as |s|}}
 			<div class="rdb-flyout">
@@ -78,9 +70,12 @@
 				<div class="rdb-fly-nums"><span>{{localize 'RDB.Board.Strength'}} <b>{{s.strength}}</b></span>
 					<span>{{localize 'RDB.Board.Clock'}} {{s.clock}} / {{s.clockMax}}</span></div>
 				<div class="rdb-fly-verbrow">
-					<button type="button" class="rdb-verb" data-verb-btn {{#unless s.verb.enabled}}disabled{{/unless}}><span>{{s.verb.label}}</span></button>
+					<button type="button" class="rdb-verb" data-verb-btn {{#unless s.verb.enabled}}disabled{{/unless}}{{#unless ../vm.canAct}} disabled{{/unless}}><span>{{s.verb.label}}</span></button>
 					<span class="rdb-verb-why">{{s.verb.why}}</span>
 				</div>
+				{{#if s.hopTarget}}
+					<button type="button" class="rdb-hop-btn" data-hop="{{s.hopTarget}}">{{localize 'RDB.Board.FocusHop'}} → {{s.name}}</button>
+				{{/if}}
 				{{#if s.verb.owed}}<span class="rdb-owed" title="{{localize 'RDB.Board.OwedTip'}}">⚠︎ {{localize 'RDB.Board.Owed'}} — {{s.verb.owed}}</span>{{/if}}
 				{{#if vm.canSeal}}<button type="button" class="rdb-seal-btn" data-seal-toggle>{{#if s.secret}}{{localize 'RDB.Board.Unseal'}}{{else}}{{localize 'RDB.Board.Seal'}}{{/if}}</button>{{/if}}
 			</div>
