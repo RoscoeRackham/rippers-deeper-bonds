@@ -17,7 +17,8 @@
  *    board is built under the SAME visibility rules (sealed cards stay sealed to non-GMs, canSeal
  *    recomputes from the hopped-to actor's ownership).
  *  - Name→actor portrait resolution: bonds are free-text names; exact case-insensitive actor-name
- *    match gets the portrait, anything else gets the studio-imprint placeholder (display-only).
+ *    match gets the portrait, anything else shows the studio imprint alone. The imprint itself is
+ *    RULED (Austin, 5 Sep 2026: "Works.") — "Bellamy & Sons · Whitechapel" stays permanently.
  *
  * PURE core first (layout, VM, verb, axis math — headless-testable); the ApplicationV2 window and
  * hooks only wire up when Foundry globals exist, so a bare `node --test` import is inert.

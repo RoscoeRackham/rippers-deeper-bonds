@@ -2,7 +2,7 @@
   "id": "rippers-deeper-bonds",
   "title": "Rippers — Deeper Bonds",
   "description": "The campaign's Deeper Bonds system (Aaron Jolliffe playtest) for Project FU: bond tiers (fleeting/solid/eternal), 4-section Bond Clocks on solid bonds, a strength ladder, and invoke = +strength retroactive to the roll just made (via FU's check-push). Extends FU bonds without forking. P1: data model + clocks + tiered caps + invoke wiring. P2: the strength ladder (cleanse, cover-regen, attribute-die raise, skill grant), clock-fill triggers, and solidify-at-rest.",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "authors": [
     {
       "name": "Rippers Unmasked"

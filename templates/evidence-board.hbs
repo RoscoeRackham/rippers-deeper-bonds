@@ -28,7 +28,7 @@
 				<div class="rdb-card-rule"></div><div class="rdb-card-rule2"></div>
 				<div class="rdb-sepia">{{#if vm.owner.img}}<img src="{{vm.owner.img}}" alt="">{{/if}}</div>
 				<div class="rdb-sitter">{{vm.owner.name}}</div>
-				<div class="rdb-imprint" title="{{localize 'RDB.Board.ImprintMocked'}}">{{localize 'RDB.Board.Imprint'}}</div>
+				<div class="rdb-imprint">{{localize 'RDB.Board.Imprint'}}</div>
 			</div>
 			<span class="rdb-owner-tag">{{localize 'RDB.Board.Owner'}}</span>
 		</div>
@@ -49,7 +49,7 @@
 						<div class="rdb-card-rule"></div><div class="rdb-card-rule2"></div>
 						<div class="rdb-sepia">{{#if p.img}}<img src="{{p.img}}" alt="">{{else}}<span class="rdb-noimg">{{localize 'RDB.Board.NoPortrait'}}</span>{{/if}}</div>
 						<div class="rdb-sitter">{{p.name}}</div>
-						<div class="rdb-imprint" title="{{localize 'RDB.Board.ImprintMocked'}}">{{localize 'RDB.Board.Imprint'}}</div>
+						<div class="rdb-imprint">{{localize 'RDB.Board.Imprint'}}</div>
 					</div>
 					<span class="rdb-tier-chip rdb-tier-{{p.tier}}">{{#if p.secret}}<b class="rdb-secret-chip">{{localize 'RDB.Board.SecretChip'}}</b>{{/if}}{{p.tier}}</span>
 				{{/if}}
