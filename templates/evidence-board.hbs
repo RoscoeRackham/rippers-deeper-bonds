@@ -1,0 +1,94 @@
+{{!-- THE EVIDENCE BOARD — design-of-record: hive/designed-cards/bond-map/ (cabinet-card revision).
+      DOM plates over one SVG string underlay; 2a Slash register tokens in the stylesheet. --}}
+<div class="rdb-board" style="--rdb-w:{{vm.w}}px;--rdb-h:{{vm.h}}px">
+	<div class="rdb-board-chrome">
+		<span class="rdb-board-brand">Rippers</span>
+		<span class="rdb-board-title">{{localize 'RDB.Board.Title'}} · {{vm.owner.name}}</span>
+	</div>
+	<div class="rdb-board-cork">
+		<div class="rdb-board-grain"></div>
+		<div class="rdb-board-frame"></div>
+
+		<svg class="rdb-strings" viewBox="0 0 {{vm.w}} {{vm.h}}" preserveAspectRatio="none">
+			{{#each vm.plates as |p|}}
+				<path d="{{p.string.path}}" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="{{p.string.widthOuter}}"/>
+				<path d="{{p.string.path}}" fill="none" class="{{#if p.stringEternal}}rdb-str-eternal{{else}}rdb-str{{/if}}"
+				      stroke-width="{{p.string.width}}" {{#if p.stringSealed}}stroke-dasharray="6 5"{{/if}}/>
+				{{#unless p.sealed}}{{#each p.string.glyphs as |g|}}
+					<circle cx="{{g.x}}" cy="{{g.y}}" r="9" class="rdb-glyph-ring {{#if g.positive}}pos{{else}}neg{{/if}}"/>
+					<text x="{{g.x}}" y="{{g.yText}}" text-anchor="middle" class="rdb-glyph {{#if g.positive}}pos{{else}}neg{{/if}}"
+					      {{#unless g.positive}}transform="rotate(180 {{g.x}} {{g.y}})"{{/unless}}>{{g.glyph}}</text>
+				{{/each}}{{/unless}}
+			{{/each}}
+		</svg>
+
+		{{!-- owner card (center) --}}
+		<div class="rdb-plate rdb-plate-owner" style="left:{{vm.owner.x}}px;top:{{vm.owner.y}}px">
+			<div class="rdb-card">
+				<div class="rdb-card-rule"></div><div class="rdb-card-rule2"></div>
+				<div class="rdb-sepia">{{#if vm.owner.img}}<img src="{{vm.owner.img}}" alt="">{{/if}}</div>
+				<div class="rdb-sitter">{{vm.owner.name}}</div>
+				<div class="rdb-imprint" title="{{localize 'RDB.Board.ImprintMocked'}}">{{localize 'RDB.Board.Imprint'}}</div>
+			</div>
+			<span class="rdb-owner-tag">{{localize 'RDB.Board.Owner'}}</span>
+		</div>
+
+		{{!-- bond plates --}}
+		{{#each vm.plates as |p|}}
+			<div class="rdb-plate {{#if p.selected}}rdb-selected{{/if}}" data-plate="{{p.index}}" data-selectable="{{p.selectable}}"
+			     style="left:{{p.x}}px;top:{{p.y}}px;transform:translate(-50%,-50%) rotate({{p.rot}}deg)">
+				<span class="rdb-pin rdb-pin-{{p.tier}}"></span>
+				{{#if p.sealed}}
+					<div class="rdb-card rdb-card-sealed">
+						<div class="rdb-card-rule"></div>
+						<span class="rdb-wax">R</span>
+						<div class="rdb-sealed-line">{{localize 'RDB.Board.Sealed'}}</div>
+					</div>
+				{{else}}
+					<div class="rdb-card">
+						<div class="rdb-card-rule"></div><div class="rdb-card-rule2"></div>
+						<div class="rdb-sepia">{{#if p.img}}<img src="{{p.img}}" alt="">{{else}}<span class="rdb-noimg">{{localize 'RDB.Board.NoPortrait'}}</span>{{/if}}</div>
+						<div class="rdb-sitter">{{p.name}}</div>
+						<div class="rdb-imprint" title="{{localize 'RDB.Board.ImprintMocked'}}">{{localize 'RDB.Board.Imprint'}}</div>
+					</div>
+					<span class="rdb-tier-chip rdb-tier-{{p.tier}}">{{#if p.secret}}<b class="rdb-secret-chip">{{localize 'RDB.Board.SecretChip'}}</b>{{/if}}{{p.tier}}</span>
+				{{/if}}
+			</div>
+		{{/each}}
+
+		{{!-- focus-hop note: permission ⚠ owed; hop renders GM-only until ruled --}}
+		{{#unless vm.hopAllowed}}
+			<div class="rdb-hop-note">
+				<span class="rdb-hop-label">{{localize 'RDB.Board.FocusHop'}}</span>
+				<span class="rdb-owed" title="{{localize 'RDB.Board.OwedTip'}}">⚠︎ {{localize 'RDB.Board.OwedHop'}}</span>
+			</div>
+		{{/unless}}
+
+		{{!-- detail flyout --}}
+		{{#with vm.selected as |s|}}
+			<div class="rdb-flyout">
+				<div class="rdb-fly-head"><span class="rdb-fly-name">{{s.name}}</span>
+					<span class="rdb-tier-chip rdb-tier-{{s.tier}}">{{s.tier}}</span></div>
+				<div class="rdb-fly-rule"></div>
+				{{#each s.axes as |a|}}
+					<div class="rdb-axis"><span class="{{#if a.isNeg}}neg{{/if}}">{{a.neg}}</span>
+						<span class="rdb-axis-glyph {{#if a.isPos}}pos{{/if}}{{#if a.isNeg}}neg{{/if}}">{{a.glyph}}&#xFE0E;</span>
+						<span class="{{#if a.isPos}}pos{{/if}}">{{a.pos}}</span></div>
+				{{/each}}
+				<div class="rdb-fly-nums"><span>{{localize 'RDB.Board.Strength'}} <b>{{s.strength}}</b></span>
+					<span>{{localize 'RDB.Board.Clock'}} {{s.clock}} / {{s.clockMax}}</span></div>
+				<div class="rdb-fly-verbrow">
+					<button type="button" class="rdb-verb" data-verb-btn {{#unless s.verb.enabled}}disabled{{/unless}}><span>{{s.verb.label}}</span></button>
+					<span class="rdb-verb-why">{{s.verb.why}}</span>
+				</div>
+				{{#if s.verb.owed}}<span class="rdb-owed" title="{{localize 'RDB.Board.OwedTip'}}">⚠︎ {{localize 'RDB.Board.Owed'}} — {{s.verb.owed}}</span>{{/if}}
+				{{#if vm.canSeal}}<button type="button" class="rdb-seal-btn" data-seal-toggle>{{#if s.secret}}{{localize 'RDB.Board.Unseal'}}{{else}}{{localize 'RDB.Board.Seal'}}{{/if}}</button>{{/if}}
+			</div>
+		{{/with}}
+	</div>
+	<div class="rdb-keybar">
+		<span><b>↑ ↓</b> {{localize 'RDB.Board.KeyCycle'}}</span>
+		<span><b>Enter</b> {{localize 'RDB.Board.KeyVerb'}}</span>
+		<span><b>Esc</b> {{localize 'RDB.Board.KeyBack'}}</span>
+	</div>
+</div>

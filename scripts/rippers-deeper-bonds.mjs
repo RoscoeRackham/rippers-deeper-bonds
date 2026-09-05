@@ -97,10 +97,12 @@ export function fillBondClock({ clock = 0, emotions = 0, bonus = 0 } = {}, secti
  * ============================================================ */
 
 /** A per-bond Deeper record (the flag payload). Strength/emotions live on the FU bond; this is tier+clock. */
-export function makeRecord(name, tier = TIER.FLEETING, clock = 0, partyMember = false) {
+export function makeRecord(name, tier = TIER.FLEETING, clock = 0, partyMember = false, secret = false) {
 	// v0.2.3: `partyMember` (Austin ruling) — bonds to a present PARTY member gate the support actions
 	// (Status-recover + Shared Resolve). The die-size increase is emotional and NOT gated on this.
-	return { name: name ?? '', tier, clock: Math.max(0, Math.min(CLOCK_SECTIONS, Number(clock) || 0)), partyMember: !!partyMember };
+	// v0.2.5: `secret` (Evidence Board) — owner/GM-set wax seal; non-GM sees the sealed treatment
+	// (trackers.designed.html precedent). Additive, defaults false.
+	return { name: name ?? '', tier, clock: Math.max(0, Math.min(CLOCK_SECTIONS, Number(clock) || 0)), partyMember: !!partyMember, secret: !!secret };
 }
 
 export function isSolid(record) {
@@ -130,7 +132,7 @@ export function reconcileRecords(records = [], bonds = []) {
 		if (idx === -1 && records[i] && !used.has(i)) idx = i; // rename: same slot, new name
 		if (idx !== -1) {
 			used.add(idx);
-			return makeRecord(bond.name, records[idx].tier, records[idx].clock, records[idx].partyMember);
+			return makeRecord(bond.name, records[idx].tier, records[idx].clock, records[idx].partyMember, records[idx].secret);
 		}
 		return makeRecord(bond.name, TIER.FLEETING, 0);
 	});
