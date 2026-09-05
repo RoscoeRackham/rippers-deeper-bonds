@@ -16,17 +16,17 @@ test('axisValue: FU pole-name strings map to +1/-1/0, case-insensitive', () => {
 	assert.equal(axisValue(bond({ affHat: 'Affection' }), 'affHat'), 1);
 });
 
-test('boardVerb: positive→Deepen, hostile→Reconcile(disabled+owed), neutral→Invoke, mixed→Invoke+owed', () => {
+test('boardVerb: positive→Deepen, hostile→Deepen (Austin: negatives work the same; Reconcile removed), neutral/mixed→Invoke', () => {
 	const deepen = boardVerb(bond({ admInf: 'Admiration' }));
 	assert.equal(deepen.verb, 'deepen'); assert.equal(deepen.enabled, true); assert.equal(deepen.owed, null);
-	const rec = boardVerb(bond({ affHat: 'Hatred' }));
-	assert.equal(rec.verb, 'reconcile'); assert.equal(rec.enabled, false); assert.match(rec.owed, /unruled/);
+	const hostile = boardVerb(bond({ affHat: 'Hatred' }));
+	assert.equal(hostile.verb, 'deepen'); assert.equal(hostile.enabled, true); assert.equal(hostile.owed, null);
 	const inv = boardVerb(bond());
 	assert.equal(inv.verb, 'invoke'); assert.equal(inv.owed, null);
 	const mixed = boardVerb(bond({ admInf: 'Admiration', affHat: 'Hatred' }));
-	assert.equal(mixed.verb, 'invoke'); assert.match(mixed.owed, /mixed/);
-	// labels are natural case (Pirata never all-caps)
-	for (const v of [deepen, rec, inv, mixed]) assert.doesNotMatch(v.label, /^[A-Z]+$/);
+	assert.equal(mixed.verb, 'invoke'); assert.equal(mixed.owed, null); // ruled: mixed keeps Invoke, no chip
+	// no verb path ever yields Reconcile any more
+	for (const v of [deepen, hostile, inv, mixed]) { assert.notEqual(v.verb, 'reconcile'); assert.doesNotMatch(v.label, /^[A-Z]+$/); }
 });
 
 test('boardLayout: deterministic, owner centered, N distinct spots inside the board', () => {
@@ -103,8 +103,8 @@ test('VM axes rows carry pole flags for the flyout, strength matches the ladder'
 	assert.deepEqual(p.axes.map((a) => a.value), [1, 0, -1]);
 	assert.equal(p.axes[0].isPos, true);
 	assert.equal(p.axes[2].isNeg, true);
-	assert.equal(p.verb.verb, 'invoke'); // mixed
-	assert.match(p.verb.owed, /mixed/);
+	assert.equal(p.verb.verb, 'invoke'); // mixed poles keep Invoke (ruled)
+	assert.equal(p.verb.owed, null);
 });
 
 // ── focus-hop (Austin ruled 5 Sep 2026: players may re-center; navigation only) ──

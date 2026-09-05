@@ -9,9 +9,9 @@
  *  - SECRET bond (additive flag, owner/GM-set): non-GM sees the card FACE-DOWN with the wax seal
  *    ("the GM holds it") and cannot select it — the semantics trackers.designed.html already
  *    implements (god, BUILD-EVIDENCE-BOARD-GO: design-of-record precedent, not invention).
- *  - Context verb by axis state: positive → Deepen · hostile → Reconcile · neutral → Invoke;
- *    mixed poles is UNRULED → Invoke + owed chip. Invoke wires to the shipped invoke arm; Deepen
- *    wires to the shipped GM clock-advance; RECONCILE HAS NO MECHANIC YET → disabled + ⚠ owed.
+ *  - Context verb by axis state (Austin ruled 5 Sep 2026: "positive and negative bonds work the
+ *    same", "Remove reconcile"): positive OR hostile poles → Deepen · neutral or mixed → Invoke.
+ *    Invoke wires to the shipped invoke arm; Deepen wires to the shipped GM clock-advance.
  *  - Focus-hop: RULED (Austin, 5 Sep 2026: "Yes.") — any viewer, player or GM, may re-center the
  *    board on a bond's matched actor. Navigation only, never a permission change: the hopped-to
  *    board is built under the SAME visibility rules (sealed cards stay sealed to non-GMs, canSeal
@@ -41,14 +41,18 @@ export function axisValue(bond, key) {
 	return v === ax[2].toLowerCase() ? 1 : v === ax[1].toLowerCase() ? -1 : 0;
 }
 
-/** Context verb by axis state (design-of-record rule; mixed is unruled → Invoke + owed). */
+/**
+ * Context verb by axis state. Austin ruled (5 Sep 2026): "positive and negative bonds work the
+ * same" and "Remove reconcile" — hostile poles Deepen exactly as positive ones do, and mixed
+ * poles keep Invoke (ruled, no longer owed).
+ */
 export function boardVerb(bond) {
 	let pos = 0, neg = 0;
 	for (const a of EB_AXES) { const v = axisValue(bond, a[0]); if (v === 1) pos++; else if (v === -1) neg++; }
 	if (pos > 0 && neg === 0) return { verb: 'deepen', label: 'Deepen', why: 'positive poles hold it', enabled: true, owed: null };
-	if (neg > 0 && pos === 0) return { verb: 'reconcile', label: 'Reconcile', why: 'hostile poles hold it', enabled: false, owed: 'reconcile mechanics unruled' };
+	if (neg > 0 && pos === 0) return { verb: 'deepen', label: 'Deepen', why: 'hostile poles hold it', enabled: true, owed: null };
 	if (pos === 0 && neg === 0) return { verb: 'invoke', label: 'Invoke', why: 'no pole set — neutral', enabled: true, owed: null };
-	return { verb: 'invoke', label: 'Invoke', why: 'mixed poles', enabled: true, owed: 'mixed-axis verb unruled' };
+	return { verb: 'invoke', label: 'Invoke', why: 'mixed poles', enabled: true, owed: null };
 }
 
 // ── pure: layout ──────────────────────────────────────────────────────────────
@@ -214,7 +218,7 @@ export function openEvidenceBoard(actor) {
 			const bond = (focus.system?.bonds ?? [])[i]; if (!bond) return;
 			const v = boardVerb(bond);
 			const modApi = globalThis.game?.modules?.get?.(MODULE_ID)?.api;
-			// Only shipped arms — reconcile stays disabled (⚠ owed), nothing invented.
+			// Only shipped arms — invoke and the GM clock-advance; nothing invented.
 			if (v.verb === 'invoke') await modApi?.onBondInvoked?.(focus, bond.name, {});
 			else if (v.verb === 'deepen' && globalThis.game?.user?.isGM) await modApi?.fillClock?.(focus, bond.name, 1);
 			this.render();
