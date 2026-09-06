@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 
 const eb = await import('../scripts/evidence-board.mjs');
 const core = await import('../scripts/rippers-deeper-bonds.mjs');
-const { axisValue, boardVerb, boardLayout, stringGeometry, matchActorByName, buildBoardVM, cycleSelection, EB_AXES } = eb;
+const { axisValue, boardVerb, boardLayout, stringGeometry, matchActorByName, buildBoardVM, cycleSelection, EB_AXES, edgeKey, partyWebLayout, buildPartyWebVM } = eb;
 
 const bond = (o = {}) => ({ name: 'X', admInf: '', loyMis: '', affHat: '', bonus: 0, ...o });
 
@@ -126,4 +126,93 @@ test('canAct: verb agency stays GM/owner-only after a hop (navigation, not permi
 	assert.equal(buildBoardVM({ name: 'V' }, b, r, [], { isGM: false, isOwner: false }).canAct, false);
 	assert.equal(buildBoardVM({ name: 'V' }, b, r, [], { isGM: false, isOwner: true }).canAct, true);
 	assert.equal(buildBoardVM({ name: 'V' }, b, r, [], { isGM: true, isOwner: false }).canAct, true);
+});
+
+/* -------- v0.3.0: party web pure functions -------- */
+
+test('edgeKey: sorted so A|B equals B|A', () => {
+	assert.equal(edgeKey('a', 'b'), edgeKey('b', 'a'));
+	assert.equal(edgeKey('a', 'b'), 'a|b');
+	assert.equal(edgeKey('z', 'a'), 'a|z');
+	assert.equal(edgeKey('x', 'x'), 'x|x'); // self-edge degeneracy handled
+});
+
+test('partyWebLayout: places all actor and leaf ids', () => {
+	const positions = partyWebLayout(['alice', 'bob'], [{ leafId: 'leaf:x', actorId: 'alice' }]);
+	assert.ok(positions.has('alice'));
+	assert.ok(positions.has('bob'));
+	assert.ok(positions.has('leaf:x'));
+	// two actors land at distinct positions
+	const a = positions.get('alice'), b = positions.get('bob');
+	assert.ok(a.x !== b.x || a.y !== b.y);
+});
+
+test('partyWebLayout: single actor at center; leaf offset from it', () => {
+	const positions = partyWebLayout(['solo'], [{ leafId: 'leaf:x', actorId: 'solo' }], { w: 1200, h: 760 });
+	const solo = positions.get('solo');
+	assert.equal(solo.x, 600); assert.equal(solo.y, 380); // cx=600, cy=380
+	// leaf is nearby but not at the same spot
+	const leaf = positions.get('leaf:x');
+	assert.ok(leaf.x !== solo.x || leaf.y !== solo.y);
+});
+
+// Helpers
+const pwBond = (name, o = {}) => ({ name, admInf: '', loyMis: '', affHat: '', bonus: 0, ...o });
+const pwRec = (o = {}) => ({ tier: 'fleeting', clock: 0, partyMember: false, secret: false, targetUuid: null, ...o });
+const pwEntry = (id, bonds, records, { isOwner = false } = {}) => ({
+	actor: { id, uuid: `Actor.${id}`, name: id, img: null },
+	bonds, records, isOwner,
+});
+
+test('buildPartyWebVM: bidirectional name-matched bonds → one undirected edge', () => {
+	const a = pwEntry('alice', [pwBond('bob')], [pwRec()]);
+	const b = pwEntry('bob', [pwBond('alice')], [pwRec()]);
+	const vm = buildPartyWebVM([a, b], { isGM: true });
+	assert.equal(vm.edges.length, 1);
+	assert.equal(vm.actorNodes.length, 2);
+	assert.equal(vm.leafNodes.length, 0);
+});
+
+test('buildPartyWebVM: unresolved name → leaf node + edge', () => {
+	const a = pwEntry('alice', [pwBond('Whitechapel')], [pwRec()]);
+	const vm = buildPartyWebVM([a], { isGM: true });
+	assert.equal(vm.leafNodes.length, 1);
+	assert.equal(vm.leafNodes[0].name, 'Whitechapel');
+	assert.equal(vm.edges.length, 1);
+	assert.equal(vm.actorNodes.length, 1);
+});
+
+test('buildPartyWebVM: secret bond hidden from non-GM, non-owner', () => {
+	const a = pwEntry('alice', [pwBond('bob')], [pwRec({ secret: true })]);
+	const b = pwEntry('bob', [], []);
+	const vm = buildPartyWebVM([a, b], { isGM: false });
+	assert.equal(vm.edges.length, 0); // secret bond filtered
+});
+
+test('buildPartyWebVM: secret bond visible to GM', () => {
+	const a = pwEntry('alice', [pwBond('bob')], [pwRec({ secret: true })]);
+	const b = pwEntry('bob', [], []);
+	const vm = buildPartyWebVM([a, b], { isGM: true });
+	assert.equal(vm.edges.length, 1);
+	assert.equal(vm.edges[0].sealed, true); // all-sealed edge renders dashed
+});
+
+test('buildPartyWebVM: resolveUuid used to find target actor (UUID over name-match)', () => {
+	const aActor = { id: 'a', uuid: 'Actor.a', name: 'Alice', img: null };
+	const bActor = { id: 'b', uuid: 'Actor.b', name: 'Bob', img: null };
+	const a = { actor: aActor, bonds: [pwBond('someone')], records: [pwRec({ targetUuid: 'Actor.b' })], isOwner: false };
+	const b = { actor: bActor, bonds: [], records: [], isOwner: false };
+	const resolveUuid = (uuid) => (uuid === 'Actor.b' ? bActor : null);
+	const vm = buildPartyWebVM([a, b], { isGM: true, resolveUuid });
+	assert.equal(vm.edges.length, 1); // actor-actor edge via UUID
+	assert.equal(vm.leafNodes.length, 0); // not a leaf — UUID resolved it
+});
+
+test('buildPartyWebVM: self-bonds (actor bonded to themselves by name) produce no edge', () => {
+	const a = pwEntry('alice', [pwBond('alice')], [pwRec()]);
+	const vm = buildPartyWebVM([a], { isGM: true });
+	// alice bonded to alice: targetActor.id === actor.id, skips actor-actor edge, falls through to leaf
+	// self-bond is treated as a leaf (consistent with one-directional rule — A→B never writes B)
+	assert.equal(vm.edges.length, 1);
+	assert.equal(vm.leafNodes.length, 1);
 });

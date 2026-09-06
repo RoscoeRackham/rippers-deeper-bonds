@@ -810,8 +810,8 @@ async function pickTargetActor(currentUuid) {
 	const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
 	if (!DialogV2) return undefined;
 	const actors = [...(globalThis.game?.actors?.values?.() ?? [])];
-	const currentActor = currentUuid ? globalThis.game?.actors?.get?.(currentUuid) : null;
-	const opts = actors.map((a) => `<option value="${escHtml(a.id)}"${a.id === currentUuid ? ' selected' : ''}>${escHtml(a.name)}</option>`).join('');
+	const currentActor = currentUuid ? (globalThis.fromUuidSync?.(currentUuid) ?? null) : null;
+	const opts = actors.map((a) => `<option value="${escHtml(a.uuid)}"${a.uuid === currentUuid ? ' selected' : ''}>${escHtml(a.name)}</option>`).join('');
 	const linked = currentActor ? `Currently linked to: <strong>${escHtml(currentActor.name)}</strong>` : 'No actor linked.';
 	return DialogV2.wait({
 		window: { title: 'Link bond to an actor' },
@@ -897,8 +897,8 @@ function injectBondControls(app) {
 
 			// GM tier-CRUD + strength-ladder buttons
 			if (isGM) {
-				// Actor link button (v0.3.0): stores a UUID alongside FU's free-text name
-				const linkedActor = rec.targetUuid ? globalThis.game?.actors?.get?.(rec.targetUuid) : null;
+				// Actor link button (v0.3.0): stores actor.uuid (Foundry uuid) alongside FU's free-text name
+				const linkedActor = rec.targetUuid ? (globalThis.fromUuidSync?.(rec.targetUuid) ?? null) : null;
 				const linkLabel = linkedActor ? `Linked: ${linkedActor.name}` : 'Link actor';
 				const linkTitle = linkedActor
 					? `Linked to ${linkedActor.name} — click to change or clear`

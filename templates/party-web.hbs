@@ -1,0 +1,48 @@
+{{!-- PARTY WEB — multi-actor bond graph (rippers-deeper-bonds v0.3.0).
+      Aggregates all world character bonds; leaves = free-text names with no world actor;
+      secret bonds filtered per viewer permissions. Same cork register as the Connections board. --}}
+<div class="rdb-board" style="--rdb-w:{{vm.w}}px;--rdb-h:{{vm.h}}px">
+	<div class="rdb-board-chrome">
+		<span class="rdb-board-brand">Rippers</span>
+		<span class="rdb-board-title">Party Web</span>
+	</div>
+	<div class="rdb-board-cork">
+		<div class="rdb-board-grain"></div>
+		<div class="rdb-board-frame"></div>
+
+		<svg class="rdb-strings" viewBox="0 0 {{vm.w}} {{vm.h}}" preserveAspectRatio="none">
+			{{#each vm.edges as |e|}}
+				<path d="{{e.path}}" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="{{e.widthOuter}}"/>
+				<path d="{{e.path}}" fill="none" class="{{#if e.eternal}}rdb-str-eternal{{else}}rdb-str{{/if}}"
+				      stroke-width="{{e.width}}" {{#if e.sealed}}stroke-dasharray="6 5"{{/if}}/>
+				{{#unless e.sealed}}{{#each e.glyphs as |g|}}
+					<circle cx="{{g.x}}" cy="{{g.y}}" r="9" class="rdb-glyph-ring {{#if g.positive}}pos{{else}}neg{{/if}}"/>
+					<text x="{{g.x}}" y="{{g.yText}}" text-anchor="middle" class="rdb-glyph {{#if g.positive}}pos{{else}}neg{{/if}}"
+					      {{#unless g.positive}}transform="rotate(180 {{g.x}} {{g.y}})"{{/unless}}>{{g.glyph}}</text>
+				{{/each}}{{/unless}}
+			{{/each}}
+		</svg>
+
+		{{!-- character actor nodes (cabinet cards) --}}
+		{{#each vm.actorNodes as |n|}}
+			<div class="rdb-plate" style="left:{{n.x}}px;top:{{n.y}}px;transform:translate(-50%,-50%)">
+				<div class="rdb-card">
+					<div class="rdb-card-rule"></div><div class="rdb-card-rule2"></div>
+					<div class="rdb-sepia">{{#if n.img}}<img src="{{n.img}}" alt="">{{else}}<span class="rdb-noimg">{{localize 'RDB.Board.NoPortrait'}}</span>{{/if}}</div>
+					<div class="rdb-sitter">{{n.name}}</div>
+					<div class="rdb-imprint">{{localize 'RDB.Board.Imprint'}}</div>
+				</div>
+			</div>
+		{{/each}}
+
+		{{!-- leaf nodes: free-text bonds with no matching world actor --}}
+		{{#each vm.leafNodes as |n|}}
+			<div class="rdb-leaf-node" style="left:{{n.x}}px;top:{{n.y}}px">
+				<span class="rdb-leaf-name">{{n.name}}</span>
+			</div>
+		{{/each}}
+	</div>
+	<div class="rdb-keybar">
+		<span>Party bonds — read only · link actors via the bond sheet to resolve free-text nodes</span>
+	</div>
+</div>

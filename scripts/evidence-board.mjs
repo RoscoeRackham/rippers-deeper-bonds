@@ -148,6 +148,140 @@ export function cycleSelection(selectable, current, dir) {
 	return selectable[(idx + dir + selectable.length) % selectable.length];
 }
 
+// ── pure: party web ───────────────────────────────────────────────────────────
+
+/** Sorted edge key for undirected identity — edgeKey('a','b') === edgeKey('b','a'). */
+export function edgeKey(a, b) {
+	return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+/**
+ * Deterministic party-web layout. Character actors go on a circle; leaves fan outward from their
+ * connecting actor. Single actor: placed at center. Returns a Map<id, {x, y}>.
+ * @param {string[]} actorIds  character actor ids, in stable iteration order
+ * @param {{ leafId: string, actorId: string }[]} leafEdgeHints  which actor a leaf hangs off
+ * @param {{ w?: number, h?: number }} [opts]
+ */
+export function partyWebLayout(actorIds, leafEdgeHints, { w = 1200, h = 760 } = {}) {
+	const positions = new Map();
+	const cx = w / 2, cy = h / 2;
+	const n = actorIds.length;
+	const r = n <= 1 ? 0 : Math.min(w, h) * 0.28;
+	actorIds.forEach((id, i) => {
+		const angle = n <= 1 ? 0 : -Math.PI / 2 + (i * 2 * Math.PI) / n;
+		positions.set(id, { x: Math.round(cx + r * Math.cos(angle)), y: Math.round(cy + r * Math.sin(angle)) });
+	});
+	// Group leaves by connecting actor
+	const leafByActor = new Map();
+	for (const { leafId, actorId } of leafEdgeHints) {
+		if (!leafByActor.has(actorId)) leafByActor.set(actorId, []);
+		const arr = leafByActor.get(actorId);
+		if (!arr.includes(leafId)) arr.push(leafId);
+	}
+	// Fan each actor's leaves outward from the board center
+	for (const [actorId, leaves] of leafByActor) {
+		const aPos = positions.get(actorId) ?? { x: cx, y: cy };
+		const baseAngle = Math.atan2(aPos.y - cy, aPos.x - cx);
+		const leafR = 130;
+		const spread = leaves.length > 1 ? Math.PI / 3 : 0;
+		leaves.forEach((leafId, li) => {
+			if (positions.has(leafId)) return; // multi-actor leaf: first placement wins
+			const offset = leaves.length > 1 ? (li - (leaves.length - 1) / 2) * (spread / (leaves.length - 1)) : 0;
+			const angle = baseAngle + offset;
+			positions.set(leafId, { x: Math.round(aPos.x + leafR * Math.cos(angle)), y: Math.round(aPos.y + leafR * Math.sin(angle)) });
+		});
+	}
+	return positions;
+}
+
+/**
+ * Build the party-web view-model from pre-fetched actor data (pure — no Foundry globals).
+ *
+ * @param {{ actor: {id,uuid,name,img}, bonds: object[], records: object[], isOwner: boolean }[]} actorEntries
+ * @param {{ isGM?: boolean, resolveUuid?: (uuid: string) => {id: string}|null, w?: number, h?: number }} [opts]
+ * @returns {{ actorNodes: object[], leafNodes: object[], edges: object[], w: number, h: number }}
+ */
+export function buildPartyWebVM(actorEntries, { isGM = false, resolveUuid = null, w = 1200, h = 760 } = {}) {
+	// Registry of character actors in this web
+	const actorById = new Map();
+	for (const { actor } of actorEntries) actorById.set(actor.id, actor);
+	const actorList = [...actorById.values()];
+
+	// Enumerate bonds → directed edges; union of A→B + B→A → one undirected edge
+	const edgeData = new Map(); // edgeKey → { fromId, toId, bonds: [...] }
+	const leafNodes = new Map(); // leafId → { id, name }
+	const leafEdgeHints = []; // { leafId, actorId }
+
+	for (const { actor, bonds, records, isOwner } of actorEntries) {
+		bonds.forEach((bond, i) => {
+			const rec = records?.[i] ?? {};
+			if (rec.secret && !isGM && !isOwner) return; // permission: secret hidden from non-GM non-owner
+
+			// Resolve target: stored UUID first, then name-match fallback
+			let targetActor = null;
+			if (rec.targetUuid && resolveUuid) {
+				const resolved = resolveUuid(rec.targetUuid);
+				if (resolved && actorById.has(resolved.id)) targetActor = actorById.get(resolved.id);
+			}
+			if (!targetActor) {
+				const matched = matchActorByName(bond.name, actorList);
+				if (matched && actorById.has(matched.id)) targetActor = matched;
+			}
+
+			const strength = deeperStrength(bond);
+			const bondEntry = { fuBond: bond, rec, strength };
+
+			if (targetActor && targetActor.id !== actor.id) {
+				// Actor → actor edge
+				const key = edgeKey(actor.id, targetActor.id);
+				if (!edgeData.has(key)) edgeData.set(key, { fromId: actor.id, toId: targetActor.id, bonds: [] });
+				edgeData.get(key).bonds.push(bondEntry);
+			} else {
+				// Leaf node (free-text name, no matching actor)
+				const leafId = 'leaf:' + String(bond.name ?? '').trim().toLowerCase();
+				if (!leafNodes.has(leafId)) leafNodes.set(leafId, { id: leafId, name: bond.name });
+				const key = edgeKey(actor.id, leafId);
+				if (!edgeData.has(key)) {
+					edgeData.set(key, { fromId: actor.id, toId: leafId, bonds: [] });
+					leafEdgeHints.push({ leafId, actorId: actor.id });
+				}
+				edgeData.get(key).bonds.push(bondEntry);
+			}
+		});
+	}
+
+	// Layout
+	const actorIds = [...actorById.keys()];
+	const positions = partyWebLayout(actorIds, leafEdgeHints, { w, h });
+
+	// Actor nodes
+	const actorNodes = actorIds.map((id) => {
+		const a = actorById.get(id);
+		const pos = positions.get(id) ?? { x: Math.round(w / 2), y: Math.round(h / 2) };
+		return { id, kind: 'actor', name: a.name, img: a.img ?? null, ...pos };
+	});
+
+	// Leaf nodes
+	const leafNodeList = [...leafNodes.values()].map((l) => {
+		const pos = positions.get(l.id) ?? { x: 0, y: 0 };
+		return { id: l.id, kind: 'leaf', name: l.name, ...pos };
+	});
+
+	// SVG edges — take geometry from the strongest bond on each edge
+	const edges = [];
+	for (const [, edge] of edgeData) {
+		const fromPos = positions.get(edge.fromId) ?? { x: Math.round(w / 2), y: Math.round(h / 2) };
+		const toPos = positions.get(edge.toId) ?? { x: Math.round(w / 2), y: Math.round(h / 2) };
+		const strongest = edge.bonds.reduce((best, b) => (b.strength > best.strength ? b : best));
+		const geo = stringGeometry(fromPos, toPos, strongest.fuBond);
+		const allSealed = edge.bonds.every((b) => !!b.rec.secret);
+		const anyEternal = edge.bonds.some((b) => (b.rec.tier ?? '') === TIER.ETERNAL);
+		edges.push({ path: geo.path, width: geo.width, widthOuter: geo.widthOuter, glyphs: allSealed ? [] : geo.glyphs, sealed: allSealed, eternal: anyEternal });
+	}
+
+	return { actorNodes, leafNodes: leafNodeList, edges, w, h };
+}
+
 // ── runtime: the ApplicationV2 window + wiring (inert headless) ───────────────
 const RT = () => globalThis.foundry?.applications;
 export function openEvidenceBoard(actor) {
@@ -178,6 +312,7 @@ export function openEvidenceBoard(actor) {
 					if (el.dataset.selectable === 'true') { this._selected = i; this.render(); }
 				});
 			});
+			root.querySelector('.rdb-web-btn')?.addEventListener('click', () => openPartyWeb());
 			root.querySelector('[data-verb-btn]')?.addEventListener('click', () => this.#runVerb());
 			// focus-hop (Austin ruled: any viewer): re-center on the selected bond's matched actor
 			root.querySelector('[data-hop]')?.addEventListener('click', () => {
@@ -230,11 +365,59 @@ export function openEvidenceBoard(actor) {
 	return app;
 }
 
+/**
+ * Open the Party Web window — a multi-actor graph of all world character bonds. Read-only;
+ * live-syncs on updateActor. Opens from the Connections board's chrome button.
+ */
+export function openPartyWeb() {
+	const api = RT()?.api;
+	if (!api?.ApplicationV2) return null;
+	const Base = api.HandlebarsApplicationMixin(api.ApplicationV2);
+	class PartyWebApp extends Base {
+		static DEFAULT_OPTIONS = {
+			id: 'rdb-party-web', classes: ['rdb-board-app'],
+			window: { title: 'Party Web', resizable: true },
+			position: { width: 1240, height: 860 },
+		};
+		static PARTS = { board: { template: `modules/${MODULE_ID}/templates/party-web.hbs` } };
+		_updateHook = null;
+		async _prepareContext() {
+			const isGM = !!globalThis.game?.user?.isGM;
+			const chars = globalThis.game?.actors?.filter?.((a) => a.type === 'character') ?? [];
+			const actorEntries = chars.map((actor) => ({
+				actor: { id: actor.id, uuid: actor.uuid, name: actor.name, img: actor.img ?? null },
+				bonds: Array.isArray(actor.system?.bonds) ? actor.system.bonds : [],
+				records: getRecords(actor),
+				isOwner: !!actor.isOwner,
+			}));
+			const vm = buildPartyWebVM(actorEntries, {
+				isGM,
+				resolveUuid: (uuid) => globalThis.fromUuidSync?.(uuid) ?? null,
+			});
+			return { vm };
+		}
+		_onRender() {
+			// Live-sync: re-render on any actor update (bonds are actor data)
+			this._updateHook = globalThis.Hooks?.on?.('updateActor', () => this.render());
+		}
+		async close(opts) {
+			if (this._updateHook != null) globalThis.Hooks?.off?.('updateActor', this._updateHook);
+			return super.close(opts);
+		}
+	}
+	// Reuse existing instance if open
+	const existing = globalThis.ui?.windows?.[PartyWebApp.DEFAULT_OPTIONS.id] ?? Object.values(globalThis.ui?.windows ?? {}).find((w) => w.constructor?.name === 'PartyWebApp');
+	if (existing?.rendered) { existing.bringToTop?.(); return existing; }
+	const app = new PartyWebApp();
+	app.render(true);
+	return app;
+}
+
 // hooks: sheet-panel header button + api surface (runtime only)
 if (globalThis.Hooks?.on) {
 	Hooks.once('ready', () => {
 		const mod = globalThis.game?.modules?.get?.(MODULE_ID);
-		if (mod?.api) mod.api.openEvidenceBoard = openEvidenceBoard;
+		if (mod?.api) { mod.api.openEvidenceBoard = openEvidenceBoard; mod.api.openPartyWeb = openPartyWeb; }
 	});
 	Hooks.on('renderFUStandardActorSheet', (app) => {
 		try {

@@ -176,3 +176,16 @@
 .rdb-board-open { width:auto; font-family:var(--rt-mono, 'IBM Plex Mono', monospace); font-size:10px;
 	font-weight:600; letter-spacing:.1em; text-transform:uppercase; margin:2px 0; padding:2px 8px;
 	background:#120a0c; border:1px solid #4a1a22; color:#c9b8a8; cursor:pointer; }
+/* Party Web chrome button (Evidence Board chrome strip) */
+.rdb-web-btn { font-family:var(--rt-mono,'IBM Plex Mono',monospace); font-size:10px; font-weight:600;
+	letter-spacing:.1em; text-transform:uppercase; padding:2px 10px; background:#0a0507;
+	border:1px solid #7b4bd8; color:#a98cff; cursor:pointer; }
+.rdb-web-btn:hover { background:#1a0d2e; }
+/* Leaf nodes: free-text bond targets with no matching world actor */
+.rdb-leaf-node { position:absolute; transform:translate(-50%,-50%); z-index:3; text-align:center;
+	background:rgba(10,5,7,.88); border:1px dashed #4a1a22; padding:5px 9px; max-width:110px; }
+.rdb-leaf-name { display:block; font-family:var(--rt-mono,'IBM Plex Mono',monospace); font-size:9.5px;
+	font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:#c9b8a8;
+	white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* Link-actor button in bond bars */
+.rdb-btn--link { border:1px solid #7b4bd8; background:rgba(123,75,216,.12); color:#a98cff; }
