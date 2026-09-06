@@ -817,8 +817,10 @@ async function pickTargetActor(currentUuid) {
 		window: { title: 'Link bond to an actor' },
 		content: `<form><p>${linked}</p><label>Actor<select name="uuid" style="width:100%;margin-top:4px"><option value="">— none (free text) —</option>${opts}</select></label></form>`,
 		buttons: [
-			{ action: 'ok', label: 'Link', default: true, callback: (_ev, button) => button.form.querySelector('select[name="uuid"]').value || null },
-			{ action: 'cancel', label: 'Cancel', callback: () => undefined },
+			// Wrap in an object — DialogV2 v13 substitutes the action id ('ok'/'cancel') for nullish
+			// callback returns, so returning null directly would persist the string 'ok' as targetUuid.
+			{ action: 'ok', label: 'Link', default: true, callback: (_ev, button) => ({ uuid: button.form.querySelector('select[name="uuid"]').value || null }) },
+			{ action: 'cancel', label: 'Cancel', callback: () => ({ cancel: true }) },
 		],
 	});
 }
@@ -906,9 +908,9 @@ function injectBondControls(app) {
 				bar.appendChild(mkButton(linkLabel, linkTitle, {
 					className: 'rdb-btn--link',
 					onClick: async () => {
-						const uuid = await pickTargetActor(rec.targetUuid);
-						if (uuid === undefined) return; // cancelled
-						await setTargetUuid(actor, rec.name, uuid);
+						const result = await pickTargetActor(rec.targetUuid);
+						if (!result || result.cancel) return; // cancelled
+						await setTargetUuid(actor, rec.name, result.uuid);
 					},
 				}));
 

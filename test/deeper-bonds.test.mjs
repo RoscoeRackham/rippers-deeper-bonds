@@ -148,7 +148,7 @@ test('solidifyButtonState: hidden for a solid or eternal bond', () => {
 
 /* -------- invoke: FU check-push bond name (item 6 fix) -------- */
 
-import { pushBondName, matchActorByName } from '../scripts/rippers-deeper-bonds.mjs';
+import { pushBondName, matchActorByName, setTargetUuid, MODULE_ID } from '../scripts/rippers-deeper-bonds.mjs';
 
 test('pushBondName reads FU 4.16.2 additionalData.push.with', () => {
 	assert.equal(pushBondName({ with: 'Ada', feelings: ['Loyalty'], strength: 3, ignoreFp: false }), 'Ada');
@@ -214,4 +214,25 @@ test('matchActorByName: returns null on no match', () => {
 test('matchActorByName: accepts any iterable (Set, Map values)', () => {
 	const s = new Set([{ name: 'Ada' }, { name: 'Bo' }]);
 	assert.ok(matchActorByName(s, 'Bo') !== null);
+});
+
+/* -------- picker blocker regression (DialogV2 nullish-substitution) -------- */
+
+test('setTargetUuid clear-to-none stores null, not the string "ok" (DialogV2 substitution regression)', async () => {
+	// Simulate the call site after the picker fix: it passes null (unwrapped from { uuid: null }).
+	// Without the fix, DialogV2 would return 'ok' and the call site would pass 'ok' here.
+	globalThis.game = { user: { isActiveGM: true } };
+	const stored = {};
+	const actor = {
+		getFlag: (_mod, key) => stored[key] ?? null,
+		setFlag: async (_mod, key, val) => { stored[key] = val; },
+		system: { bonds: [{ name: 'Ada', admInf: '', loyMis: '', affHat: '', bonus: 0 }] },
+	};
+	stored.bonds = [makeRecord('Ada', TIER.FLEETING, 0, false, false, 'Actor.xyz')];
+	// Clear the link (picker returns { uuid: null }, call site passes null)
+	const ok = await setTargetUuid(actor, 'Ada', null);
+	assert.equal(ok, true);
+	assert.equal(stored.bonds[0].targetUuid, null, 'targetUuid must be null after clear, not "ok" or any truthy junk');
+	assert.notEqual(stored.bonds[0].targetUuid, 'ok');
+	globalThis.game = undefined;
 });
