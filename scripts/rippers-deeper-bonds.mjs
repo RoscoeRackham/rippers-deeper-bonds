@@ -97,12 +97,14 @@ export function fillBondClock({ clock = 0, emotions = 0, bonus = 0 } = {}, secti
  * ============================================================ */
 
 /** A per-bond Deeper record (the flag payload). Strength/emotions live on the FU bond; this is tier+clock. */
-export function makeRecord(name, tier = TIER.FLEETING, clock = 0, partyMember = false, secret = false) {
+export function makeRecord(name, tier = TIER.FLEETING, clock = 0, partyMember = false, secret = false, targetUuid = null) {
 	// v0.2.3: `partyMember` (Austin ruling) — bonds to a present PARTY member gate the support actions
 	// (Status-recover + Shared Resolve). The die-size increase is emotional and NOT gated on this.
 	// v0.2.5: `secret` (Evidence Board) — owner/GM-set wax seal; non-GM sees the sealed treatment
 	// (trackers.designed.html precedent). Additive, defaults false.
-	return { name: name ?? '', tier, clock: Math.max(0, Math.min(CLOCK_SECTIONS, Number(clock) || 0)), partyMember: !!partyMember, secret: !!secret };
+	// v0.3.0: `targetUuid` — explicit actor UUID set via the GM picker. null = free-text bond (legacy
+	// behaviour; name-match still used for display resolution when UUID absent). Additive, defaults null.
+	return { name: name ?? '', tier, clock: Math.max(0, Math.min(CLOCK_SECTIONS, Number(clock) || 0)), partyMember: !!partyMember, secret: !!secret, targetUuid: targetUuid ?? null };
 }
 
 export function isSolid(record) {
@@ -132,7 +134,7 @@ export function reconcileRecords(records = [], bonds = []) {
 		if (idx === -1 && records[i] && !used.has(i)) idx = i; // rename: same slot, new name
 		if (idx !== -1) {
 			used.add(idx);
-			return makeRecord(bond.name, records[idx].tier, records[idx].clock, records[idx].partyMember, records[idx].secret);
+			return makeRecord(bond.name, records[idx].tier, records[idx].clock, records[idx].partyMember, records[idx].secret, records[idx].targetUuid ?? null);
 		}
 		return makeRecord(bond.name, TIER.FLEETING, 0);
 	});
@@ -141,6 +143,19 @@ export function reconcileRecords(records = [], bonds = []) {
 /** One bond may be invoked per Check (ruling F11). */
 export function canInvokeOnCheck(invokedThisCheck = []) {
 	return (invokedThisCheck?.length ?? 0) === 0;
+}
+
+/**
+ * Pure: trim+lowercase exact actor-name match against any iterable of {name} objects. Returns the
+ * first matching element or null. Used as the legacy fallback when no `targetUuid` is stored, and
+ * in the picker to pre-select the closest actor. Named actors (people, places, ideas) with no world
+ * counterpart stay free-text and return null here — that is expected and legal.
+ */
+export function matchActorByName(actors, name) {
+	const needle = String(name ?? '').trim().toLowerCase();
+	if (!needle) return null;
+	const list = Array.isArray(actors) ? actors : (typeof actors?.[Symbol.iterator] === 'function' ? [...actors] : []);
+	return list.find((a) => String(a?.name ?? '').trim().toLowerCase() === needle) ?? null;
 }
 
 /**
@@ -282,6 +297,22 @@ export function recordFor(actor, name, index) {
 	const records = getRecords(actor);
 	if (Number.isInteger(index) && records[index]?.name === name) return records[index];
 	return records.find((r) => r.name === name) ?? null;
+}
+
+/** Return the stored target UUID for a bond, or null if not set. */
+export function getTargetUuid(actor, name) {
+	return recordFor(actor, name)?.targetUuid ?? null;
+}
+
+/** Store an explicit actor UUID on a bond record. Pass null to clear (revert to free-text). GM-only. */
+export async function setTargetUuid(actor, name, uuid) {
+	if (!isActiveGM() || !actor) return false;
+	const records = getRecords(actor);
+	const rec = records.find((r) => r.name === name);
+	if (!rec) return false;
+	rec.targetUuid = uuid ?? null;
+	await setRecords(actor, records);
+	return true;
 }
 
 /** Is this bond flagged a present PARTY member? (gates the support actions.) */
@@ -765,6 +796,33 @@ async function pickSkillName(actor, rec) {
 	});
 }
 
+/** Minimal HTML escaping for untrusted strings in dialog content. */
+function escHtml(s) {
+	return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * GM actor picker dialog — presents all world actors in a select dropdown. Returns the chosen UUID
+ * string, null (cleared to free-text), or undefined (cancelled). Uses DialogV2; resolves undefined
+ * when the API is unavailable (e.g. headless test).
+ */
+async function pickTargetActor(currentUuid) {
+	const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+	if (!DialogV2) return undefined;
+	const actors = [...(globalThis.game?.actors?.values?.() ?? [])];
+	const currentActor = currentUuid ? globalThis.game?.actors?.get?.(currentUuid) : null;
+	const opts = actors.map((a) => `<option value="${escHtml(a.id)}"${a.id === currentUuid ? ' selected' : ''}>${escHtml(a.name)}</option>`).join('');
+	const linked = currentActor ? `Currently linked to: <strong>${escHtml(currentActor.name)}</strong>` : 'No actor linked.';
+	return DialogV2.wait({
+		window: { title: 'Link bond to an actor' },
+		content: `<form><p>${linked}</p><label>Actor<select name="uuid" style="width:100%;margin-top:4px"><option value="">— none (free text) —</option>${opts}</select></label></form>`,
+		buttons: [
+			{ action: 'ok', label: 'Link', default: true, callback: (_ev, button) => button.form.querySelector('select[name="uuid"]').value || null },
+			{ action: 'cancel', label: 'Cancel', callback: () => undefined },
+		],
+	});
+}
+
 /**
  * Inject the tier gradient, a 4-section clock, and GM tier-CRUD controls onto each bond row, plus a
  * section-level "new fleeting bond" control. Reuses the existing API — no new mechanics. Defensive
@@ -839,6 +897,21 @@ function injectBondControls(app) {
 
 			// GM tier-CRUD + strength-ladder buttons
 			if (isGM) {
+				// Actor link button (v0.3.0): stores a UUID alongside FU's free-text name
+				const linkedActor = rec.targetUuid ? globalThis.game?.actors?.get?.(rec.targetUuid) : null;
+				const linkLabel = linkedActor ? `Linked: ${linkedActor.name}` : 'Link actor';
+				const linkTitle = linkedActor
+					? `Linked to ${linkedActor.name} — click to change or clear`
+					: 'Link this bond to a world actor (stores a resolvable UUID alongside the name)';
+				bar.appendChild(mkButton(linkLabel, linkTitle, {
+					className: 'rdb-btn--link',
+					onClick: async () => {
+						const uuid = await pickTargetActor(rec.targetUuid);
+						if (uuid === undefined) return; // cancelled
+						await setTargetUuid(actor, rec.name, uuid);
+					},
+				}));
+
 				const sol = solidifyButtonState(rec, records);
 				if (sol.show) {
 					bar.appendChild(
@@ -901,6 +974,10 @@ export function getModuleApi() {
 		raiseAttributeDie,
 		setEternalSkillGrant,
 		solidifyAtRest,
+		// v0.3.0 — actor-link (UUID alongside FU's free-text name)
+		matchActorByName,
+		getTargetUuid,
+		setTargetUuid,
 	};
 }
 

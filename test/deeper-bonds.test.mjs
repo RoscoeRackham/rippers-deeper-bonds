@@ -148,7 +148,7 @@ test('solidifyButtonState: hidden for a solid or eternal bond', () => {
 
 /* -------- invoke: FU check-push bond name (item 6 fix) -------- */
 
-import { pushBondName } from '../scripts/rippers-deeper-bonds.mjs';
+import { pushBondName, matchActorByName } from '../scripts/rippers-deeper-bonds.mjs';
 
 test('pushBondName reads FU 4.16.2 additionalData.push.with', () => {
 	assert.equal(pushBondName({ with: 'Ada', feelings: ['Loyalty'], strength: 3, ignoreFp: false }), 'Ada');
@@ -156,4 +156,62 @@ test('pushBondName reads FU 4.16.2 additionalData.push.with', () => {
 	assert.equal(pushBondName({ name: 'Old' }), 'Old'); // fallback
 	assert.equal(pushBondName({}), null);
 	assert.equal(pushBondName(undefined), null);
+});
+
+/* -------- v0.3.0: targetUuid + matchActorByName -------- */
+
+test('makeRecord: targetUuid defaults to null', () => {
+	const r = makeRecord('Ada', TIER.SOLID, 2);
+	assert.equal(r.targetUuid, null);
+});
+
+test('makeRecord: targetUuid stored when provided', () => {
+	const r = makeRecord('Ada', TIER.FLEETING, 0, false, false, 'uuid-abc');
+	assert.equal(r.targetUuid, 'uuid-abc');
+});
+
+test('makeRecord: null targetUuid coerces undefined to null', () => {
+	const r = makeRecord('Ada', TIER.FLEETING, 0, false, false, undefined);
+	assert.equal(r.targetUuid, null);
+});
+
+test('reconcileRecords: preserves targetUuid through a name-match', () => {
+	const records = [makeRecord('Ada', TIER.SOLID, 2, false, false, 'uuid-ada')];
+	const bonds = [{ name: 'Ada' }];
+	const out = reconcileRecords(records, bonds);
+	assert.equal(out[0].targetUuid, 'uuid-ada');
+});
+
+test('reconcileRecords: carries targetUuid through a slot rename', () => {
+	const records = [makeRecord('Ada', TIER.SOLID, 3, false, false, 'uuid-ada')];
+	const bonds = [{ name: 'Adaline' }]; // renamed in same slot
+	const out = reconcileRecords(records, bonds);
+	assert.equal(out[0].name, 'Adaline');
+	assert.equal(out[0].targetUuid, 'uuid-ada');
+});
+
+test('reconcileRecords: new bond defaults targetUuid to null', () => {
+	const records = [];
+	const bonds = [{ name: 'New' }];
+	const out = reconcileRecords(records, bonds);
+	assert.equal(out[0].targetUuid, null);
+});
+
+test('matchActorByName: exact trim+lowercase match', () => {
+	const actors = [{ name: 'Ada Lovelace' }, { name: 'Mary Shelley' }];
+	assert.deepEqual(matchActorByName(actors, 'Ada Lovelace'), { name: 'Ada Lovelace' });
+	assert.deepEqual(matchActorByName(actors, '  ada lovelace  '), { name: 'Ada Lovelace' });
+	assert.deepEqual(matchActorByName(actors, 'ADA LOVELACE'), { name: 'Ada Lovelace' });
+});
+
+test('matchActorByName: returns null on no match', () => {
+	const actors = [{ name: 'Ada Lovelace' }];
+	assert.equal(matchActorByName(actors, 'Ada'), null); // partial — no match
+	assert.equal(matchActorByName(actors, ''), null);
+	assert.equal(matchActorByName([], 'Ada Lovelace'), null);
+});
+
+test('matchActorByName: accepts any iterable (Set, Map values)', () => {
+	const s = new Set([{ name: 'Ada' }, { name: 'Bo' }]);
+	assert.ok(matchActorByName(s, 'Bo') !== null);
 });
