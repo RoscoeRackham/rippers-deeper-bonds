@@ -157,7 +157,7 @@ export function openEvidenceBoard(actor) {
 	class EvidenceBoardApp extends Base {
 		static DEFAULT_OPTIONS = {
 			id: 'rdb-evidence-board', classes: ['rdb-board-app'],
-			window: { title: 'The Evidence Board', resizable: true },
+			window: { title: 'Connections', resizable: true },
 			position: { width: 1240, height: 860 },
 		};
 		static PARTS = { board: { template: `modules/${MODULE_ID}/templates/evidence-board.hbs` } };
@@ -246,7 +246,7 @@ if (globalThis.Hooks?.on) {
 			if (!host || host.querySelector('.rdb-board-open')) return;
 			const btn = document.createElement('button');
 			btn.type = 'button'; btn.className = 'rdb-board-open';
-			btn.textContent = globalThis.game?.i18n?.localize?.('RDB.Board.Open') ?? 'The Evidence Board';
+			btn.textContent = globalThis.game?.i18n?.localize?.('RDB.Board.Open') ?? 'Connections';
 			btn.addEventListener('click', () => openEvidenceBoard(actor));
 			host.prepend(btn);
 		} catch (err) { console.warn('[rippers-deeper-bonds] board button injection failed:', err); }

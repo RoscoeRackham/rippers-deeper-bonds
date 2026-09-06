@@ -3,8 +3,8 @@
   "RIPPERS.DEEPERBONDS.Solid": "Solid",
   "RIPPERS.DEEPERBONDS.Eternal": "Eternal",
   "RIPPERS.DEEPERBONDS.Clock": "Bond Clock",
-  "RDB.Board.Open": "The Evidence Board",
-  "RDB.Board.Title": "The Evidence Board",
+  "RDB.Board.Open": "Connections",
+  "RDB.Board.Title": "Connections",
   "RDB.Board.Owner": "The owner",
   "RDB.Board.Sealed": "Sealed — the GM holds it",
   "RDB.Board.SecretChip": "Secret · GM",
@@ -19,5 +19,5 @@
   "RDB.Board.Unseal": "Break the seal",
   "RDB.Board.KeyCycle": "cycle bonds",
   "RDB.Board.KeyVerb": "invoke the verb",
-  "RDB.Board.KeyBack": "back to the board"
+  "RDB.Board.KeyBack": "back to Connections"
 }
